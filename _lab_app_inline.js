@@ -7,7 +7,7 @@
  * 4. 空间坐标锚点 (Space Anchors)
  * 5. 绝对数据绑定 (Atomic Data Binding)
  *
- * 说明：卖点简报 LLM（directorVisionTransformLLM、renderBriefFromParsed）在 ad-variant-lab.html 的内联脚本中，不在本文件。
+ * 说明：卖点简报 LLM（directorVisionTransformLLM、renderBriefFromParsed）在 index.html 的内联脚本中，不在本文件。
  */
 (function () {
   const btnCraftStoryboard = document.getElementById("btnCraftStoryboard");
@@ -23,7 +23,7 @@
 
   /* ========== 网络层（不修改分镜导演逻辑） ==========
    * - Origin：浏览器对跨域 fetch 自动附加，JS 无法手动设置（非缺失字段）
-   * - Referer：由 referrerPolicy 控制；当前默认 strict-origin-when-cross-origin（见 ad-variant-lab.html → llmApiFetch）
+   * - Referer：由 referrerPolicy 控制；当前默认 strict-origin-when-cross-origin（见 index.html → llmApiFetch）
    * - 403：能收到 HTTP 状态码，见 Console [LLM API] HTTP 错误
    * - Failed to fetch：通常无状态码，多为 CORS/断网/插件，不是 403
    * - 若中转站强制后端调用：需自建代理，前端无法仅靠加请求头解决
@@ -60,7 +60,7 @@
 
   function llmApiFetch(path, options) {
     if (typeof window.llmApiFetch !== "function") {
-      throw new Error("llmApiFetch 未加载，请确认 ad-variant-lab.html 已引入网络层脚本");
+      throw new Error("llmApiFetch 未加载，请确认 index.html 已引入网络层脚本");
     }
     return window.llmApiFetch(path, options);
   }
@@ -76,7 +76,7 @@
   function warnIfFileProtocol() {
     if (typeof location !== "undefined" && location.protocol === "file:") {
       console.warn(
-        "[分镜引擎] 当前为 file:// 协议。请安装 Live Server，右键 ad-variant-lab.html → Open with Live Server，" +
+        "[分镜引擎] 当前为 file:// 协议。请安装 Live Server，右键 index.html → Open with Live Server，" +
           "地址栏应显示 http://127.0.0.1:5500/... 而非 file://"
       );
     }
@@ -373,8 +373,6 @@
     } catch (e) {
       /* ignore */
     }
-    var el = document.getElementById("usage-scenarios-textarea");
-    if (el && String(el.value || "").trim()) return String(el.value).trim();
     return "";
   }
 
@@ -903,10 +901,27 @@
       tot = roundDurD(tot);
       var drift = roundDurD(goal - tot);
       if (shots.length && Math.abs(drift) >= 0.005) {
-        var lastIdx = shots.length - 1;
-        var lastDur = roundDurD(shots[lastIdx].duration + drift);
-        if (styleC && lastDur > 2) lastDur = 2;
-        shots[lastIdx].duration = lastDur;
+        var minAllowed = 0.5;
+        var maxAllowed = styleC ? 2 : Infinity;
+        if (drift > 0) {
+          for (i = shots.length - 1; i >= 0 && drift >= 0.005; i--) {
+            var cur = parseFloat(shots[i].duration) || 0;
+            var headroom = maxAllowed === Infinity ? drift : Math.max(0, roundDurD(maxAllowed - cur));
+            if (headroom <= 0) continue;
+            var add = drift <= headroom ? drift : headroom;
+            shots[i].duration = roundDurD(cur + add);
+            drift = roundDurD(drift - add);
+          }
+        } else {
+          for (i = shots.length - 1; i >= 0 && drift <= -0.005; i--) {
+            var cur2 = parseFloat(shots[i].duration) || 0;
+            var slack = Math.max(0, roundDurD(cur2 - minAllowed));
+            if (slack <= 0) continue;
+            var sub = -drift <= slack ? -drift : slack;
+            shots[i].duration = roundDurD(cur2 - sub);
+            drift = roundDurD(drift + sub);
+          }
+        }
       }
 
       if (styleC) assertStyleCShotDurationLimit(shots, "校准后");
@@ -1738,7 +1753,9 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
     img.style.opacity = "0";
     if (redrawBtn) redrawBtn.disabled = true;
 
-    return llmApiFetch("images/generations", {
+    var apiPath = "images/generations";
+
+    return llmApiFetch(apiPath, {
       label: "DALL-E 生图",
       apiKey: String(opts.apiKey || "").trim(),
       body: JSON.stringify({
@@ -1791,25 +1808,56 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
       });
   }
 
-  function triggerVisualShotRender(ctx, delayMs) {
+  /** 并发池：最多 maxConcurrency 路同时执行，任务按入队顺序启动 */
+  function runVisualRenderConcurrencyPool(taskFns, maxConcurrency) {
+    var limit = maxConcurrency > 0 ? maxConcurrency : 3;
+    var fns = Array.isArray(taskFns) ? taskFns : [];
+    if (!fns.length) return Promise.resolve();
+
+    return new Promise(function (resolve) {
+      var idx = 0;
+      var active = 0;
+      var settled = 0;
+
+      function pump() {
+        while (active < limit && idx < fns.length) {
+          (function (taskFn) {
+            active++;
+            Promise.resolve()
+              .then(function () {
+                return typeof taskFn === "function" ? taskFn() : Promise.resolve();
+              })
+              .catch(function (err) {
+                console.error("[Visual] 并发池任务失败:", err);
+              })
+              .finally(function () {
+                active--;
+                settled++;
+                if (settled >= fns.length) resolve();
+                else pump();
+              });
+          })(fns[idx++]);
+        }
+      }
+      pump();
+    });
+  }
+
+  function triggerVisualShotRender(ctx) {
     if (!ctx.apiKey) {
       ctx.loading.style.display = "flex";
       ctx.loading.innerHTML =
         "<span style='color:red;'>缺少 OPENAI API KEY（请在页面顶部填写，与分镜脚本共用）</span>";
-      return;
+      return Promise.resolve();
     }
-    var run = function () {
-      requestVisualShotImage(ctx);
-    };
-    if (delayMs > 0) setTimeout(run, delayMs);
-    else run();
+    return requestVisualShotImage(ctx);
   }
 
   var btnRenderVisualBoard = document.getElementById("btnRenderVisualBoard");
   if (btnRenderVisualBoard) {
     btnRenderVisualBoard.addEventListener("click", function () {
       llmFetchFailAlertShown = false;
-      /** 生图：joinLlmApiPath → https://proaiapi.tech/v1/images/generations；模型 dall-e-3（硬编码） */
+      /** 生图：joinLlmApiPath → /api/proxy/v1/images/generations（Vercel 同源代理）；模型 dall-e-3（硬编码） */
       const IMAGE_GENERATION_MODEL = window.getImageModel();
 
       var openaiKeyForImages =
@@ -1842,6 +1890,8 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
 
       container.innerHTML = "";
       container.style.display = "block";
+
+      var visualRenderTasks = [];
 
       data.forEach(function (style, sIdx) {
         if (!style || !Array.isArray(style.shots)) return;
@@ -1908,10 +1958,12 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
               typeof window.getLlmApiKeyFromInput === "function"
                 ? window.getLlmApiKeyFromInput()
                 : String(document.getElementById("llm-api-key").value || "").trim();
-            triggerVisualShotRender(renderCtx, 0);
+            triggerVisualShotRender(renderCtx);
           });
 
-          triggerVisualShotRender(renderCtx, i * 1500);
+          visualRenderTasks.push(function () {
+            return triggerVisualShotRender(renderCtx);
+          });
 
           // 5. 文本区：自动滤除视觉冗余标记
           var content = document.createElement("div");
@@ -1939,6 +1991,8 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
 
         container.appendChild(grid);
       });
+
+      runVisualRenderConcurrencyPool(visualRenderTasks, 3);
 
       // 5. 渲染完毕后，页面平滑滚动至视觉分镜区
       container.scrollIntoView({ behavior: "smooth", block: "start" });

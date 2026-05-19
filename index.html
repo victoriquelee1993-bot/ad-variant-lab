@@ -1192,7 +1192,7 @@
       <h2 id="api-config-modal-title" class="config-modal__title">API 本地配置</h2>
       <div class="field">
         <label for="cfg-api-url">API 基础地址（不含 /v1）</label>
-        <input id="cfg-api-url" type="url" class="ui-control" placeholder="https://proaiapi.tech" autocomplete="off" />
+        <input id="cfg-api-url" type="text" class="ui-control" placeholder="/api/proxy（Vercel）或 https://proaiapi.tech（本地直连）" autocomplete="off" />
       </div>
       <div class="field" style="margin-top: 12px">
         <label for="cfg-api-key">API Key</label>
@@ -1217,7 +1217,7 @@
     /* ========== LLM API 网络传输层（仅 Base URL / fetch / 错误提示；不含分镜导演逻辑） ========== */
     (function () {
       var MASTER_DEFAULT_CONFIG = {
-        url: "https://proaiapi.tech",
+        url: "/api/proxy",
         key: "",
       };
       var STORAGE_KEY = "AD_LAB_CONFIG";
@@ -1233,6 +1233,19 @@
         return val;
       }
 
+      function normalizeApiBaseUrl(url) {
+        var u = String(url || "").trim().replace(/\/+$/, "");
+
+        if (window.location.hostname.indexOf("vercel.app") !== -1) {
+          return "/api/proxy";
+        }
+
+        if (/^https?:\/\/proaiapi\.tech(\/v1)?$/i.test(u)) {
+          return "/api/proxy";
+        }
+        return u || MASTER_DEFAULT_CONFIG.url;
+      }
+
       function getEffectiveConfig() {
         var localCfg = {};
         try {
@@ -1242,7 +1255,7 @@
           localCfg = {};
         }
         return {
-          url: localCfg.url || MASTER_DEFAULT_CONFIG.url,
+          url: normalizeApiBaseUrl(localCfg.url || MASTER_DEFAULT_CONFIG.url),
           key: localCfg.key || "",
         };
       }
@@ -1253,8 +1266,9 @@
 
       window.getLlmApiKeyFromInput = function () {
         var el = document.getElementById("llm-api-key");
-        var pageInput = el ? normalizeApiKey(el.value) : "";
-        return pageInput || getEffectiveConfig().key || "";
+        var pageInput = el ? String(el.value || "").trim() : "";
+        if (pageInput) return normalizeApiKey(pageInput);
+        return getEffectiveConfig().key || "";
       };
 
       window.saveUserConfig = function (url, key) {
@@ -1390,8 +1404,9 @@
           "1. 检查 API 地址是否正确（当前：" +
           window.getLlmApiV1BaseUrl() +
           "）\n" +
-          "2. 确保使用 Live Server (http://127.0.0.1) 打开页面而非双击 HTML 文件\n" +
-          "3. 检查您的网络代理或 VPN 设置"
+          "2. Vercel 部署请使用 /api/proxy（同源代理，见 vercel.json）；本地开发可改为 https://proaiapi.tech\n" +
+          "3. 确保使用 Live Server (http://127.0.0.1) 打开页面而非双击 HTML 文件\n" +
+          "4. 检查您的网络代理或 VPN 设置"
         );
       }
       return prefix + m;
@@ -2248,7 +2263,7 @@
           }
           var pdf;
           try {
-            pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+            pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
           } catch (eDoc) {
             console.error("[Brief] PDF getDocument（已降级为空）:", tag, eDoc);
             return "";
@@ -2387,7 +2402,7 @@
         if (typeof Tesseract.createWorker !== "function") return null;
         try {
           briefOcrWorker = await briefRaceWithTimeout(
-            Tesseract.createWorker("chi_sim+eng", 1, {
+            Tesseract.createWorker("chi_sim+eng", {
               logger: function () {},
             }),
             initMs,
@@ -2401,7 +2416,9 @@
           );
           try {
             briefOcrWorker = await briefRaceWithTimeout(
-              Tesseract.createWorker("chi_sim+eng"),
+              Tesseract.createWorker("chi_sim+eng", {
+                logger: function () {},
+              }),
               initMs,
               "Tesseract.createWorker(chi_sim+eng,fallback)"
             );
@@ -2751,8 +2768,8 @@
       }
 
       if (productDropZone && productImageInput) {
-        productDropZone.addEventListener("click", function () {
-          productImageInput.click();
+        productDropZone.addEventListener("click", function (e) {
+          if (e.target !== productImageInput) productImageInput.click();
         });
         productDropZone.addEventListener("keydown", function (e) {
           if (e.key === "Enter" || e.key === " ") {
