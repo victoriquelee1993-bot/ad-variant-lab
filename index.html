@@ -1235,14 +1235,6 @@
 
       function normalizeApiBaseUrl(url) {
         var u = String(url || "").trim().replace(/\/+$/, "");
-
-        if (window.location.hostname.indexOf("vercel.app") !== -1) {
-          return "/api/proxy";
-        }
-
-        if (/^https?:\/\/proaiapi\.tech(\/v1)?$/i.test(u)) {
-          return "/api/proxy";
-        }
         return u || MASTER_DEFAULT_CONFIG.url;
       }
 
