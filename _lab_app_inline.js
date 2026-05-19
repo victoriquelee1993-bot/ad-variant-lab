@@ -21,6 +21,59 @@
       .replace(/"/g, "&quot;");
   }
 
+  const API_IMAGE_MAX_SIDE = 1024;
+  const API_IMAGE_JPEG_QUALITY = 0.8;
+
+  /** 等比例缩放后转 JPEG Base64，避免 Vision API 请求体过大 (413) */
+  function fileToCompressedBase64(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file) {
+        reject(new Error("无效文件"));
+        return;
+      }
+      var blobUrl = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        URL.revokeObjectURL(blobUrl);
+        var w = img.naturalWidth || img.width;
+        var h = img.naturalHeight || img.height;
+        if (!w || !h) {
+          reject(new Error("无法读取图片尺寸"));
+          return;
+        }
+        var maxSide = API_IMAGE_MAX_SIDE;
+        if (w > maxSide || h > maxSide) {
+          if (w >= h) {
+            h = Math.round((h * maxSide) / w);
+            w = maxSide;
+          } else {
+            w = Math.round((w * maxSide) / h);
+            h = maxSide;
+          }
+        }
+        var canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        var ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Canvas 不可用"));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        try {
+          resolve(canvas.toDataURL("image/jpeg", API_IMAGE_JPEG_QUALITY));
+        } catch (e) {
+          reject(e);
+        }
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(blobUrl);
+        reject(new Error("图片加载失败"));
+      };
+      img.src = blobUrl;
+    });
+  }
+
   /* ========== 网络层（不修改分镜导演逻辑） ==========
    * - Origin：浏览器对跨域 fetch 自动附加，JS 无法手动设置（非缺失字段）
    * - Referer：由 referrerPolicy 控制；当前默认 strict-origin-when-cross-origin（见 index.html → llmApiFetch）
@@ -263,14 +316,6 @@
   async function analyzeImagesWithVision(files, apiKey, progressCallback) {
     if (!files || files.length === 0) return null;
 
-    const fileToBase64 = (file) =>
-      new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
     const BATCH_SIZE = 5;
     const fileCount = files.length;
     let masterPrompt = "";
@@ -311,7 +356,7 @@
       ];
 
       for (let j = 0; j < batchFiles.length; j++) {
-        const b64 = await fileToBase64(batchFiles[j]);
+        const b64 = await fileToCompressedBase64(batchFiles[j]);
         content.push({ type: "image_url", image_url: { url: b64, detail: "low" } });
       }
 
@@ -582,14 +627,8 @@
 
     const files = typeof window.__getStoryboardImageFiles === "function" ? window.__getStoryboardImageFiles() : [];
     const base64Images = [];
-    const fileToBase64 = (file) =>
-      new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.readAsDataURL(file);
-      });
     for (let i = 0; i < Math.min(files.length, 6); i++) {
-      base64Images.push(await fileToBase64(files[i]));
+      base64Images.push(await fileToCompressedBase64(files[i]));
     }
     if (base64Images.length > 0) {
       setStoryEngineProgress(
