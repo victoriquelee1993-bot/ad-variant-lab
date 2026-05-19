@@ -1,0 +1,2979 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ad Variant Lab - Director Edition</title>
+  <link rel="stylesheet" href="iconfont.css" />
+  <!-- 简报解析依赖：mammoth · SheetJS · pdf.js 3.11 · JSZip · tesseract.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <style>
+    :root {
+      --bg: #f5f5f7;
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --border-color: rgba(0, 0, 0, 0.08);
+      --control-radius: 12px;
+      --blue: #0066cc;
+      --text: #1d1d1f;
+      --muted: #6e6e73;
+      --shadow: 0 20px 56px rgba(0, 102, 204, 0.07), 0 8px 24px rgba(0, 102, 204, 0.05),
+        0 1px 0 rgba(255, 255, 255, 0.92) inset;
+      --shadow-soft: 0 10px 28px rgba(0, 102, 204, 0.06);
+      --radius: 24px;
+      --radius-sm: 14px;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --control-bg: #fafafa;
+      --select-active-ring: 0 0 0 2px rgba(0, 0, 0, 0.06);
+      --range-fill: rgba(0, 102, 204, 0.38);
+      --control-border: var(--border-color);
+      --line-solid: 1px solid var(--border-color);
+      --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%236e6e73' stroke-width='1.25' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      --upload-zone-bg: linear-gradient(180deg, rgba(232, 244, 252, 0.85) 0%, rgba(242, 249, 253, 0.72) 100%);
+      --upload-zone-border: 1px dashed rgba(0, 102, 204, 0.2);
+      --control-font-size: 0.9375rem;
+      --control-line-height: 1.5;
+      --placeholder-color: var(--muted);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+      padding: 40px 20px 64px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; }
+    .hero-card {
+      background: var(--card-bg);
+      backdrop-filter: saturate(180%) blur(22px);
+      -webkit-backdrop-filter: saturate(180%) blur(22px);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 28px 28px 24px;
+      border: 1px solid var(--border-color);
+    }
+    .hero-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .hero-title {
+      margin: 0;
+      font-size: 1.35rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .btn-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: none;
+      background: rgba(0, 102, 204, 0.08);
+      color: #0066cc;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-pill--primary {
+      background: #0066cc;
+      color: #fff;
+      box-shadow: var(--shadow-soft);
+    }
+    .btn-pill--lg {
+      padding: 14px 32px;
+      font-size: 0.9375rem;
+    }
+    .btn-pill--block {
+      width: 100%;
+      justify-content: center;
+      margin-top: 4px;
+    }
+    .btn-pill--primary.btn-pill--block.btn-craft-storyboard {
+      margin: 32px 0;
+    }
+    .asset-upload-icon {
+      color: #0066cc;
+      fill: #0066cc;
+      font-size: 56px;
+      opacity: 0.85;
+      margin: 0;
+      padding: 0;
+      line-height: 1;
+      transition: opacity 0.2s ease, font-size 0.3s ease, transform 0.2s ease;
+    }
+
+    /* 产品图上传：浅色拖放区；内部 flex 绝对几何居中（素材宫格内宽高由下方 gallery 规则约束） */
+    .drop-zone {
+      cursor: pointer;
+      position: relative;
+      box-sizing: border-box;
+      border-radius: var(--control-radius);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--upload-zone-bg);
+      border: var(--upload-zone-border);
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+      width: 100%;
+      height: auto;
+      min-height: 0;
+    }
+
+    .drop-zone__center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1 1 auto;
+      width: 100%;
+      min-height: 0;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* 卖点区：空态与顶部上传区一致（淡蓝渐变 + 虚线）；有内容时切换为白底实线（见 --filled） */
+    .selling-panel {
+      position: relative;
+      box-sizing: border-box;
+      border-radius: var(--control-radius);
+      min-height: 160px;
+      margin-bottom: 22px;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+      background: var(--upload-zone-bg);
+      border: var(--upload-zone-border);
+      overflow: hidden;
+      transition:
+        background 0.2s ease,
+        background-color 0.2s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+    }
+
+    /* 空态：几何居中上传图标；占位文案隐藏以免干扰视觉中心（无障碍由 textarea aria-label 承担） */
+    .selling-panel:not(.selling-panel--filled) {
+      cursor: text;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      min-height: 160px;
+    }
+
+    .selling-panel.selling-panel--filled {
+      background: #ffffff;
+      background-color: #ffffff;
+      border: var(--line-solid);
+      align-items: stretch;
+      justify-content: flex-start;
+    }
+
+    .selling-panel:not(.selling-panel--filled) .selling-textarea {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      padding: 0;
+      border: none;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .selling-panel.selling-panel--filled .selling-textarea {
+      position: relative;
+      left: auto;
+      right: auto;
+      top: auto;
+      bottom: auto;
+      width: 100%;
+      min-height: 160px;
+    }
+
+    #product-drop-zone.drop-zone {
+      outline-offset: 2px;
+    }
+    #product-drop-zone.drop-zone:focus-visible {
+      outline: 2px solid rgba(0, 102, 204, 0.35);
+    }
+    #product-drop-zone.drop-zone:hover {
+      border-color: rgba(0, 102, 204, 0.32);
+      box-shadow: 0 4px 24px rgba(0, 102, 204, 0.06);
+    }
+
+    /* 1. 恢复布局稳定性（列数由 JS 写入 --grid-cols：2/3/4/5 → 4/9/16/25 宫格容量） */
+    .gallery-container {
+      display: grid;
+      grid-template-columns: repeat(var(--grid-cols, 2), 1fr);
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+
+    /* 2. 只有当没有图片时，上传区横跨全行（大横幅） */
+    .drop-zone:not(.drop-zone--has-image) {
+      grid-column: span var(--grid-cols, 2);
+      width: 100% !important;
+      aspect-ratio: auto !important;
+      min-height: 160px !important;
+    }
+
+    /* 3. 有图片后，所有格子（含上传按钮）强制 1:1 */
+    .drop-zone.drop-zone--has-image,
+    .gallery-item {
+      grid-column: span 1;
+      width: 100% !important;
+      aspect-ratio: 1 / 1 !important;
+      height: auto !important;
+      min-width: 0;
+    }
+
+    /* 确保 gallery 内部元素直接参与 Grid 排序 */
+    #product-gallery {
+      display: contents;
+    }
+
+    /* 小宫格上传格内缩小图标；空态上传格仍用全局 .asset-upload-icon 尺寸 */
+    .gallery-container .drop-zone.drop-zone--has-image .asset-upload-icon {
+      font-size: 28px !important;
+    }
+    .drop-zone__input {
+      position: absolute;
+      width: 0;
+      height: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+    /* 每一个素材格子：卡片样式（宽高比见上与 .drop-zone 共用规则） */
+    .gallery-item {
+      width: 100% !important;
+      height: auto !important;
+      border-radius: var(--control-radius);
+      overflow: hidden;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+      position: relative;
+      background: #fff;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .gallery-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .gallery-item:hover {
+      transform: scale(1.1);
+      z-index: 10;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+    }
+    .gallery-item__del {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      line-height: 1;
+      color: #fff;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      cursor: pointer;
+      border: none;
+      z-index: 3;
+      opacity: 0;
+      pointer-events: none;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      transition: opacity 0.18s ease, background 0.18s ease;
+    }
+    .gallery-item:hover .gallery-item__del {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .gallery-item__del:hover {
+      background: rgba(0, 0, 0, 0.55);
+    }
+    .param-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 2.2fr;
+      gap: 18px;
+      align-items: flex-start;
+      margin-top: 0;
+      margin-bottom: 18px;
+    }
+    .param-row--pair {
+      grid-template-columns: 1fr 1fr;
+    }
+    .param-row > .field {
+      min-width: 0;
+    }
+    .field-platform {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+      min-width: 0;
+    }
+    .field label {
+      display: block;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .field-llm-api-key {
+      margin-bottom: 20px;
+      max-width: 100%;
+    }
+    .field-llm-api-key .ui-control--full {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .api-key-group {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      width: 100%;
+    }
+    #llm-api-key {
+      flex: 1;
+      margin-bottom: 0 !important;
+    }
+    .api-key-group .btn-pill {
+      white-space: nowrap;
+      height: 44px;
+      text-decoration: none;
+      flex-shrink: 0;
+    }
+    .config-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .config-modal-overlay.is-open {
+      display: flex;
+    }
+    .config-modal {
+      width: 100%;
+      max-width: 480px;
+      background: var(--card-bg);
+      backdrop-filter: saturate(180%) blur(22px);
+      -webkit-backdrop-filter: saturate(180%) blur(22px);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border-color);
+      padding: 24px;
+    }
+    .config-modal__title {
+      margin: 0 0 16px;
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+    .config-modal__actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 20px;
+    }
+    /* 文本类控件统一视觉（与卖点简报 textarea 对齐） */
+    input.ui-control,
+    textarea.ui-control,
+    .selling-textarea {
+      width: 100%;
+      padding: 12px;
+      border-radius: var(--control-radius);
+      border: var(--line-solid);
+      background: var(--control-bg);
+      font-size: var(--control-font-size);
+      line-height: var(--control-line-height);
+      font-family: inherit;
+      color: var(--text);
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    input.ui-control::placeholder,
+    textarea.ui-control::placeholder,
+    .selling-textarea::placeholder {
+      color: var(--placeholder-color);
+      opacity: 0.85;
+    }
+
+    .ui-control:focus {
+      outline: none;
+      border-color: rgba(0, 0, 0, 0.22);
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+    }
+
+    /* 空态卖点区：焦点环贴近上传区（浅蓝描边） */
+    .selling-panel:not(.selling-panel--filled):focus-within {
+      outline: none;
+      border-color: rgba(0, 102, 204, 0.32);
+      box-shadow: 0 4px 24px rgba(0, 102, 204, 0.06);
+    }
+
+    /* 已填充：与 Product 等输入框同一套焦点高亮 */
+    .selling-panel.selling-panel--filled:focus-within {
+      outline: none;
+      border-color: rgba(0, 0, 0, 0.22);
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+    }
+
+    .selling-panel:not(.selling-panel--filled) .selling-textarea::placeholder {
+      opacity: 0;
+    }
+
+    .selling-panel.selling-panel--filled .selling-textarea::placeholder {
+      opacity: 0.85;
+    }
+
+    input.ui-control:focus::placeholder,
+    textarea.ui-control:focus::placeholder,
+    .selling-textarea:focus::placeholder {
+      color: transparent;
+    }
+
+    select.ui-control {
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      padding: 12px 40px 12px 12px;
+      border-radius: var(--control-radius);
+      border: var(--line-solid);
+      background-color: var(--control-bg);
+      background-image: var(--select-chevron);
+      background-repeat: no-repeat;
+      background-position: right 16px center;
+      background-size: 10px 10px;
+      font-size: var(--control-font-size);
+      line-height: var(--control-line-height);
+      font-family: inherit;
+      color: var(--text);
+      cursor: pointer;
+      color-scheme: light;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    select.ui-control:focus {
+      outline: none;
+      border-color: rgba(0, 0, 0, 0.22);
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+    }
+
+    textarea.ui-control {
+      resize: vertical;
+      min-height: 4.5rem;
+    }
+    textarea.ui-control.textarea-autosize {
+      resize: none;
+      overflow: hidden;
+      min-height: calc(var(--control-line-height) * 1em + 24px);
+      max-height: 70vh;
+      line-height: var(--control-line-height);
+    }
+    .compact-fields {
+      margin-bottom: 0;
+    }
+    /* 卖点区 label 与 Product / Category 字段对齐 */
+    .dur-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: nowrap;
+      gap: clamp(16px, 3.5vw, 28px);
+      font-size: 0.8125rem;
+      margin-bottom: 10px;
+      min-width: 0;
+      overflow-x: auto;
+      overflow-y: visible;
+      scrollbar-width: thin;
+      -webkit-overflow-scrolling: touch;
+    }
+    .dur-head::-webkit-scrollbar {
+      height: 4px;
+    }
+    .dur-head::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.12);
+      border-radius: 999px;
+    }
+    .field-duration .dur-head > label {
+      display: block;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+      flex: 0 1 auto;
+      align-self: center;
+      white-space: nowrap;
+      line-height: 1.3;
+    }
+    #durLabel.dur-value {
+      flex: 0 1 auto;
+      align-self: center;
+      min-width: 0;
+      margin-left: auto;
+      font-weight: 500;
+      text-align: right;
+      line-height: 1.3;
+      white-space: nowrap;
+    }
+    .dual-range {
+      margin: 14px 0 10px;
+    }
+    .dual-range__inner {
+      position: relative;
+      height: 32px;
+      margin: 0 8px;
+      touch-action: none;
+      user-select: none;
+      --p-min: 0;
+      --p-max: 100;
+    }
+    .dual-range-track {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      height: 4px;
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 999px;
+      pointer-events: none;
+    }
+    .dual-range__fill {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      height: 4px;
+      left: calc(var(--p-min) * 1%);
+      width: calc((var(--p-max) - var(--p-min)) * 1%);
+      background: var(--range-fill);
+      border-radius: 999px;
+      pointer-events: none;
+      transition: left 0.08s ease-out, width 0.08s ease-out, transform 0.08s ease-out;
+    }
+    .dual-range.is-dragging .dual-range__fill {
+      transition: none;
+    }
+    .range-thumb {
+      position: absolute;
+      top: 50%;
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      padding: 0;
+      border: 2px solid #0066cc;
+      border-radius: 50%;
+      background: #fff;
+      transform: translate(-50%, -50%);
+      cursor: grab;
+      box-shadow:
+        0 0 0 0.5px rgba(0, 0, 0, 0.1),
+        0 1px 3px rgba(0, 0, 0, 0.08);
+      transition: border-color 0.22s ease, box-shadow 0.22s ease, transform 0.2s ease;
+    }
+    .range-thumb--min {
+      left: calc(var(--p-min) * 1%);
+    }
+    .range-thumb--max {
+      left: calc(var(--p-max) * 1%);
+    }
+    .range-thumb:hover,
+    .range-thumb:focus-visible,
+    .range-thumb:active,
+    .range-thumb.is-dragging {
+      outline: none !important;
+      border-color: #0066cc !important;
+      box-shadow:
+        0 0 0 0.5px rgba(0, 0, 0, 0.08),
+        0 2px 6px rgba(0, 0, 0, 0.07),
+        var(--select-active-ring) !important;
+    }
+    .range-thumb:active,
+    .range-thumb.is-dragging {
+      cursor: grabbing;
+      transform: translate(-50%, -50%);
+    }
+    .selling-panel__hint {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      flex-wrap: nowrap;
+      align-items: center;
+      justify-content: center;
+      place-content: center;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      pointer-events: auto;
+      cursor: pointer;
+      text-align: center;
+      transition: opacity 0.2s ease;
+    }
+
+    .selling-panel__hint .asset-upload-icon {
+      pointer-events: none;
+      margin: 0;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .selling-panel--filled .selling-panel__hint {
+      display: none;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .selling-panel--filled .selling-panel__hint .asset-upload-icon {
+      opacity: 0;
+    }
+
+    .selling-textarea {
+      position: relative;
+      z-index: 1;
+      display: block;
+      min-height: 160px;
+      resize: vertical;
+      border: none;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .selling-textarea:focus {
+      outline: none;
+      box-shadow: none;
+    }
+
+    .selling-panel:not(.selling-panel--filled) .selling-panel__hint {
+      display: grid;
+      place-items: center;
+      align-content: center;
+      justify-content: center;
+    }
+
+    .selling-panel__hint:hover .asset-upload-icon {
+      transform: scale(1.06);
+    }
+
+    .sr-only-duration {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      border: 0;
+    }
+
+    .lab-busy-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(0, 0, 0, 0.42);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
+    .lab-busy-overlay.is-visible {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+    .lab-busy-card .lab-busy-label {
+      animation: none;
+      transition: none;
+    }
+    .lab-busy-card {
+      background: var(--card-bg);
+      padding: 20px 28px;
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow);
+      font-size: 0.95rem;
+    }
+
+    .story-dashboard {
+      display: none;
+      margin-top: 28px;
+      padding-top: 22px;
+      border-top: 1px solid var(--border-color);
+    }
+    .story-dashboard.is-visible {
+      display: block;
+    }
+    .story-dashboard__title {
+      margin: 0 0 14px;
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+    .board-meta-line {
+      font-size: 0.9rem;
+      margin-bottom: 10px;
+      color: var(--text);
+      line-height: 1.55;
+    }
+    .board-meta-line--sub {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .board-director-review {
+      margin-bottom: 10px;
+      line-height: 1.55;
+      font-size: 0.88rem;
+      color: var(--text);
+    }
+    .usp-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 18px;
+      margin: 16px 0;
+    }
+    .usp-cell {
+      background: var(--control-bg);
+      border: var(--line-solid);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+    }
+    .usp-cell h4 {
+      margin: 0 0 6px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 600;
+    }
+    .usp-cell ul {
+      padding-left: 0;
+      margin: 8px 0;
+      list-style: none;
+    }
+    .usp-cell li {
+      font-size: 0.88rem;
+      line-height: 1.6;
+      margin-bottom: 12px;
+      padding-left: 12px;
+      padding-bottom: 4px;
+      border-left: 3px solid var(--blue);
+      border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+    }
+    .usp-cell li:last-child {
+      border-bottom: none;
+    }
+    .story-style-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0 8px;
+    }
+    .tab-btn {
+      border-radius: 999px;
+      padding: 8px 14px;
+      border: var(--line-solid);
+      background: var(--control-bg);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.85rem;
+      color: var(--text);
+    }
+    .tab-btn.is-active {
+      background: rgba(0, 102, 204, 0.12);
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+    .tab-panel {
+      display: none;
+      margin-top: 12px;
+    }
+    .tab-panel.is-active {
+      display: block;
+    }
+    .timeline {
+      border-left: 2px solid rgba(0, 102, 204, 0.22);
+      margin-left: 8px;
+      padding-left: 16px;
+    }
+    .tl-shot {
+      margin-bottom: 18px;
+    }
+    .tl-shot-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .tl-no {
+      font-weight: 600;
+      font-size: 0.78rem;
+      letter-spacing: 0.06em;
+    }
+    .tl-pill {
+      font-size: 0.72rem;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.06);
+    }
+    .tl-pill.dim {
+      opacity: 0.8;
+    }
+    .tl-visual {
+      margin: 4px 0;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .tl-audio {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin: 4px 0 0;
+    }
+    .tl-visual-dna {
+      margin: 0 0 16px;
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      background: rgba(0, 102, 204, 0.07);
+      border: 1px solid rgba(0, 102, 204, 0.12);
+    }
+    .tl-visual-dna__label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: var(--blue);
+      margin-bottom: 8px;
+    }
+    .tl-visual-dna__body {
+      font-size: 0.88rem;
+      line-height: 1.5;
+      color: var(--text);
+      white-space: pre-wrap;
+    }
+    .tl-meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: baseline;
+      font-size: 0.82rem;
+      margin-top: 6px;
+      line-height: 1.45;
+    }
+    .tl-meta-key {
+      flex: 0 0 auto;
+      min-width: 4.5em;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .tl-meta-val {
+      flex: 1 1 180px;
+      color: var(--text);
+    }
+    .tl-dur {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .total-dur {
+      margin-top: 14px;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .tl-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--blue);
+      margin-right: 6px;
+      vertical-align: middle;
+      opacity: 0.5;
+    }
+    .story-dashboard__actions {
+      margin-top: 18px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero-card">
+      <input
+        type="number"
+        class="sr-only-duration"
+        id="durRangeMin"
+        value="15"
+        min="0"
+        max="120"
+        tabindex="-1"
+        aria-hidden="true"
+      />
+      <input
+        type="number"
+        class="sr-only-duration"
+        id="durRangeMax"
+        value="30"
+        min="0"
+        max="120"
+        tabindex="-1"
+        aria-hidden="true"
+      />
+      <input type="hidden" id="totalSecMin" value="15" />
+      <input type="hidden" id="totalSecMax" value="30" />
+      <div class="hero-top">
+        <h1 class="hero-title">Ad Variant Lab</h1>
+        <button type="button" id="btn-clear" class="btn-pill">清空</button>
+      </div>
+
+      <div class="gallery-container">
+        <div class="drop-zone" id="product-drop-zone" role="button" tabindex="0" aria-label="点击多选图片，或拖拽文件夹；Ctrl+V 粘贴图片">
+          <input
+            type="file"
+            id="product-image-input"
+            class="drop-zone__input"
+            accept="image/*"
+            multiple
+            tabindex="-1"
+            aria-hidden="true"
+          />
+          <div class="drop-zone__center">
+            <span class="iconfont icon-shangchuan asset-upload-icon" aria-hidden="true"></span>
+          </div>
+        </div>
+        <div id="product-gallery" aria-live="polite"></div>
+      </div>
+
+      <!-- 参数配置行 -->
+      <div class="param-row">
+        <div class="field field-platform">
+          <label for="platform-select">Platform（平台）</label>
+          <select id="platform-select" class="ui-control" name="platform">
+            <option>TikTok / Reels / Shorts</option>
+            <option>Instagram/Facebook Feed</option>
+            <option>小红书</option>
+            <option>Bilibili</option>
+            <option>Amazon/Listing/PDP</option>
+            <option>Shopify</option>
+            <option>AliExpress/Temu</option>
+            <option>YouTube</option>
+            <option>Brand TVC</option>
+            <option>Netflix</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ratio-select">Ratio（比例）</label>
+          <select id="ratio-select" class="ui-control">
+            <option>9:16 Vertical</option>
+            <option>16:9 Horizontal</option>
+            <option>1:1 Square</option>
+            <option>4:5 Portrait</option>
+            <option>2:3 Pinterest</option>
+            <option>21:9 Ultra-Wide</option>
+          </select>
+        </div>
+        <div class="field field-duration">
+          <div class="dur-head">
+            <label id="duration-range-label">VIDEO TOTAL DURATION（视频总时长区间）</label>
+            <div id="durLabel" class="dur-value" aria-live="polite"></div>
+          </div>
+          <div
+            class="dual-range"
+            id="duration-range"
+            role="group"
+            aria-labelledby="duration-range-label"
+            aria-describedby="durLabel"
+          >
+            <div class="dual-range__inner" id="dual-range-inner">
+              <div class="dual-range-track" aria-hidden="true"></div>
+              <div class="dual-range__fill" id="dual-range-fill" aria-hidden="true"></div>
+              <button
+                type="button"
+                class="range-thumb range-thumb--min"
+                id="dur-thumb-min"
+                role="slider"
+                aria-label="Minimum total script duration"
+              ></button>
+              <button
+                type="button"
+                class="range-thumb range-thumb--max"
+                id="dur-thumb-max"
+                role="slider"
+                aria-label="Maximum total script duration"
+              ></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="param-row param-row--pair">
+        <div class="field">
+          <label for="product-input">Product（产品）</label>
+          <input
+            id="product-input"
+            type="text"
+            class="ui-control"
+            placeholder="产品名称或一句话定位"
+            autocomplete="off"
+          />
+        </div>
+        <div class="field">
+          <label for="category-input">Category（产品类目）</label>
+          <input id="category-input" type="text" class="ui-control" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="field field-llm-api-key">
+        <label for="llm-api-key"
+          >OPENAI API KEY（必填：统一用于卖点解析、分镜脚本与视觉图）</label>
+        <div class="api-key-group">
+          <input
+            id="llm-api-key"
+            type="password"
+            class="ui-control"
+            placeholder="请输入 API KEY（格式如：sk-...） ，可保存到本机浏览器"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" id="btn-settings" class="btn-pill">API 设置</button>
+
+          <a
+            href="https://proaiapi.tech/console/token"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn-pill"
+            style="text-decoration: none; background: rgba(0, 102, 204, 0.05); white-space: nowrap"
+            >获取 Key</a>
+        </div>
+        <p style="font-size: 0.75rem; color: var(--muted); margin-top: 8px; margin-bottom: 0">
+          Key 仅存于本机浏览器 localStorage，不会写入代码或上传到服务器。
+        </p>
+      </div>
+
+      <div class="compact-fields">
+        <div class="field">
+          <label for="selling-textarea">USPs / Brief（卖点简报）</label>
+          <div class="selling-panel">
+            <input
+              type="file"
+              id="selling-file-input"
+              class="drop-zone__input"
+              multiple
+              accept=".txt,.md,.csv,.htm,.html,.pdf,.docx,.pptx,.xlsx,.xls,image/*"
+              tabindex="-1"
+              aria-hidden="true"
+            />
+            <textarea
+              id="selling-textarea"
+              class="selling-textarea"
+              placeholder=""
+              aria-label="卖点简报：粘贴正文或点击图标导入文件"
+            ></textarea>
+            <div
+              class="selling-panel__hint"
+              role="button"
+              tabindex="0"
+              aria-label="导入简报"
+            >
+              <span class="iconfont icon-shangchuan asset-upload-icon" aria-hidden="true"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 操作按钮：分镜引擎（_lab_app_inline.js） -->
+      <button
+        type="button"
+        id="btnCraftStoryboard"
+        class="btn-pill btn-pill--primary btn-pill--lg btn-pill--block btn-craft-storyboard"
+      >
+        Craft Storyboard
+      </button>
+
+      <section
+        id="storyDashboard"
+        class="story-dashboard"
+        aria-hidden="true"
+      >
+        <h2 class="story-dashboard__title">Story Dashboard</h2>
+        <div id="boardCategoryLine" class="board-meta-line"></div>
+        <div id="boardLightingLine" class="board-meta-line board-meta-line--sub"></div>
+        <div id="uspGrid" class="usp-grid"></div>
+        <div class="story-style-tabs" role="tablist" aria-label="分镜风格">
+          <button type="button" class="tab-btn is-active" data-tab="0" role="tab" aria-selected="true">
+            Style A (Precision)
+          </button>
+          <button type="button" class="tab-btn" data-tab="1" role="tab" aria-selected="false">
+            Style B (Lifestyle)
+          </button>
+          <button type="button" class="tab-btn" data-tab="2" role="tab" aria-selected="false">
+            Style C (Hook-Driven)
+          </button>
+        </div>
+        <label for="storyModsTarget" class="field" style="display: block; margin-top: 8px">修正目标脚本</label>
+        <select id="storyModsTarget" class="ui-control" style="max-width: 320px; margin-top: 4px"></select>
+        <label for="storyScriptMods" class="field" style="display: block; margin-top: 12px">分镜修正备注（可选）</label>
+        <textarea
+          id="storyScriptMods"
+          class="ui-control"
+          rows="2"
+          style="width: 100%; max-width: 720px; margin-top: 4px"
+          placeholder="例如：加强开场钩子 / 压缩中段演示…"
+        ></textarea>
+        <div style="display: flex; justify-content: flex-start; align-items: center; margin-top: 12px;">
+          <button
+            type="button"
+            id="btnRefineSelected"
+            class="btn-pill"
+            style="background: #0066cc; color: #fff; padding: 10px 48px; font-weight: 600; border: none; box-shadow: 0 4px 12px rgba(0,102,204,0.2);"
+          >
+            完成
+          </button>
+        </div>
+        <div id="tabPanels"></div>
+        <div class="story-dashboard__actions">
+          <button type="button" id="btnCopyMarkdownFeishu" class="btn-pill">
+            复制 Markdown 表格（飞书 / 钉钉）
+          </button>
+          <button
+            type="button"
+            id="btnRenderVisualBoard"
+            class="btn-pill"
+            style="margin-left: 10px; background: rgba(0, 102, 204, 0.1); color: var(--blue)"
+          >
+            🖼️ 生成视觉分镜图
+          </button>
+        </div>
+        <div id="visualBoardContainer" style="margin-top: 36px; display: none"></div>
+      </section>
+    </section>
+  </div>
+
+  <div
+    id="api-config-modal"
+    class="config-modal-overlay"
+    aria-hidden="true"
+    role="dialog"
+    aria-labelledby="api-config-modal-title"
+  >
+    <div class="config-modal">
+      <h2 id="api-config-modal-title" class="config-modal__title">API 本地配置</h2>
+      <div class="field">
+        <label for="cfg-api-url">API 基础地址（不含 /v1）</label>
+        <input id="cfg-api-url" type="url" class="ui-control" placeholder="https://proaiapi.tech" autocomplete="off" />
+      </div>
+      <div class="field" style="margin-top: 12px">
+        <label for="cfg-api-key">API Key</label>
+        <input id="cfg-api-key" type="password" class="ui-control" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+      </div>
+      <div class="config-modal__actions">
+        <button type="button" id="btn-close-api-config" class="btn-pill">取消</button>
+        <button type="button" id="btn-save-api-config" class="btn-pill btn-pill--primary">保存到本机</button>
+      </div>
+    </div>
+  </div>
+
+  <div
+    id="labBusyOverlay"
+    class="lab-busy-overlay"
+    aria-hidden="true"
+  >
+    <div class="lab-busy-card"><span class="lab-busy-label">AI 大脑正在深度审片中，请稍候...</span></div>
+  </div>
+  <script src="ecommerce-logic.js"></script>
+  <script>
+    /* ========== LLM API 网络传输层（仅 Base URL / fetch / 错误提示；不含分镜导演逻辑） ========== */
+    (function () {
+      var MASTER_DEFAULT_CONFIG = {
+        url: "https://proaiapi.tech",
+        key: "",
+      };
+      var STORAGE_KEY = "AD_LAB_CONFIG";
+
+      function normalizeApiKey(raw) {
+        var val = String(raw || "").trim();
+        if (val.indexOf("{") !== -1 && val.indexOf("key") !== -1) {
+          try {
+            var parsed = JSON.parse(val);
+            if (parsed.key) return String(parsed.key).trim();
+          } catch (e) {}
+        }
+        return val;
+      }
+
+      function getEffectiveConfig() {
+        var localCfg = {};
+        try {
+          var localRaw = localStorage.getItem(STORAGE_KEY);
+          localCfg = localRaw ? JSON.parse(localRaw) : {};
+        } catch (e) {
+          localCfg = {};
+        }
+        return {
+          url: localCfg.url || MASTER_DEFAULT_CONFIG.url,
+          key: localCfg.key || "",
+        };
+      }
+
+      window.getLlmApiBaseUrl = function () {
+        return getEffectiveConfig().url;
+      };
+
+      window.getLlmApiKeyFromInput = function () {
+        var el = document.getElementById("llm-api-key");
+        var pageInput = el ? normalizeApiKey(el.value) : "";
+        return pageInput || getEffectiveConfig().key || "";
+      };
+
+      window.saveUserConfig = function (url, key) {
+        var config = {
+          url: String(url || "").trim(),
+          key: String(key || "").trim(),
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+        var pk = document.getElementById("llm-api-key");
+        if (pk) pk.value = config.key;
+        alert(
+          "配置已锁定在本地浏览器。除非你手动清理缓存，否则刷新、重开都会自动回填。"
+        );
+      };
+
+      function openApiConfigModal() {
+        var modal = document.getElementById("api-config-modal");
+        var cfg = getEffectiveConfig();
+        var pageKeyInput = document.getElementById("llm-api-key");
+        var pageKey = pageKeyInput ? normalizeApiKey(pageKeyInput.value) : "";
+        var cfgUrlInput = document.getElementById("cfg-api-url");
+        var cfgKeyInput = document.getElementById("cfg-api-key");
+        if (cfgUrlInput) cfgUrlInput.value = cfg.url;
+        if (cfgKeyInput) cfgKeyInput.value = cfg.key || pageKey;
+        if (modal) {
+          modal.classList.add("is-open");
+          modal.setAttribute("aria-hidden", "false");
+        }
+      }
+
+      function closeApiConfigModal() {
+        var modal = document.getElementById("api-config-modal");
+        if (modal) {
+          modal.classList.remove("is-open");
+          modal.setAttribute("aria-hidden", "true");
+        }
+      }
+
+      var apiConfigUiBound = false;
+      function initApiConfigUi() {
+        if (apiConfigUiBound) return;
+        apiConfigUiBound = true;
+
+        var cfg = getEffectiveConfig();
+        var pageKeyInput = document.getElementById("llm-api-key");
+        if (pageKeyInput && cfg.key) {
+          pageKeyInput.value = cfg.key;
+        }
+
+        var btnOpen = document.getElementById("btn-settings");
+        var btnClose = document.getElementById("btn-close-api-config");
+        var btnSave = document.getElementById("btn-save-api-config");
+        var modal = document.getElementById("api-config-modal");
+
+        if (btnOpen) {
+          btnOpen.addEventListener("click", function (e) {
+            e.preventDefault();
+            openApiConfigModal();
+          });
+        }
+        if (btnClose) btnClose.addEventListener("click", closeApiConfigModal);
+        if (modal) {
+          modal.addEventListener("click", function (e) {
+            if (e.target === modal) closeApiConfigModal();
+          });
+        }
+        if (btnSave) {
+          btnSave.addEventListener("click", function () {
+            var urlEl = document.getElementById("cfg-api-url");
+            var keyEl = document.getElementById("cfg-api-key");
+            window.saveUserConfig(
+              urlEl ? urlEl.value : cfg.url,
+              keyEl ? keyEl.value : ""
+            );
+            closeApiConfigModal();
+          });
+        }
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initApiConfigUi);
+      } else {
+        initApiConfigUi();
+      }
+    })();
+
+    /** OpenAI 兼容 API 根 */
+    window.getLlmApiV1BaseUrl = function () {
+      var origin = String(window.getLlmApiBaseUrl() || "")
+        .replace(/\/+$/, "")
+        .replace(/\/v1\/?$/i, "");
+      return origin ? origin + "/v1" : "https://api.openai.com/v1";
+    };
+    /** 拼接完整端点，例如 joinLlmApiPath("chat/completions") → …/v1/chat/completions */
+    window.joinLlmApiPath = function (path) {
+      var v1Base = window.getLlmApiV1BaseUrl();
+      var p = String(path || "")
+        .replace(/^\/+/, "")
+        .replace(/^v1\/?/i, "");
+      return p ? v1Base + "/" + p : v1Base;
+    };
+    window.getTextModel = function () {
+      return "gpt-4o";
+    };
+    window.getImageModel = function () {
+      return "dall-e-3";
+    };
+
+    window.logLlmApiUrl = function (path, label) {
+      var url = window.joinLlmApiPath(path);
+      if (typeof console !== "undefined" && console.log) {
+        console.log("[Ad Variant Lab] " + (label || "API") + " →", url);
+      }
+      return url;
+    };
+
+    window.formatLlmFetchError = function (err, context, meta) {
+      meta = meta || {};
+      var m = err && err.message ? String(err.message) : String(err || "未知错误");
+      var prefix = context ? context + "：\n" : "";
+      var low = m.toLowerCase();
+      var isNet =
+        low.indexOf("failed to fetch") !== -1 ||
+        low.indexOf("networkerror") !== -1 ||
+        low.indexOf("load failed") !== -1 ||
+        (err && err.name === "TypeError" && low.indexOf("fetch") !== -1);
+
+      if (isNet) {
+        return (
+          prefix +
+          "网络连接失败 — 可能是 CORS 跨域问题、API 域名无法访问或被广告插件拦截。\n\n" +
+          "【排查建议】\n" +
+          "1. 检查 API 地址是否正确（当前：" +
+          window.getLlmApiV1BaseUrl() +
+          "）\n" +
+          "2. 确保使用 Live Server (http://127.0.0.1) 打开页面而非双击 HTML 文件\n" +
+          "3. 检查您的网络代理或 VPN 设置"
+        );
+      }
+      return prefix + m;
+    };
+
+    window.headersToPlainObject = function (headers) {
+      var o = {};
+      if (!headers) return o;
+      if (typeof headers.forEach === "function") {
+        headers.forEach(function (v, k) {
+          o[k] = v;
+        });
+      }
+      return o;
+    };
+
+    window.formatLlmHttpError = function (res, context, meta) {
+      meta = meta || {};
+      var status = res ? res.status : 0;
+      var statusText = res ? res.statusText : "";
+      var apiMsg = meta.apiMsg ? String(meta.apiMsg) : "";
+      var prefix = context ? context + "：\n" : "";
+      var hint = "请求被服务器拒绝 (HTTP " + status + ")。";
+
+      if (status === 403) {
+        hint = "【403 Forbidden】权限不足或来源被封禁，请检查 API Key 和代理设置。";
+      } else if (status === 401) {
+        hint = "【401 Unauthorized】API Key 无效或已过期。";
+      } else if (status === 429) {
+        hint = "【429 Too Many Requests】触发限流或余额不足。";
+      }
+
+      return prefix + hint + (apiMsg ? "\n响应详情：" + apiMsg : "");
+    };
+
+    /**
+     * 统一 fetch 出口：mode/referrer/鉴权/网络层与 HTTP 错误诊断。
+     * Origin 由浏览器自动附加（禁止用 JS 伪造）；Referer 受 referrerPolicy 控制。
+     * 不修改请求体中的导演 prompt；分镜逻辑仍在 _lab_app_inline.js。
+     */
+    window.llmApiFetch = async function (path, options) {
+      options = options || {};
+      var label = options.label != null ? String(options.label) : String(path || "API");
+      var url = window.logLlmApiUrl(path, label);
+      var apiKey =
+        options.apiKey != null && String(options.apiKey).trim() !== ""
+          ? String(options.apiKey).trim()
+          : window.getLlmApiKeyFromInput();
+      var headers = {};
+      var hk;
+      if (options.headers) {
+        for (hk in options.headers) {
+          if (Object.prototype.hasOwnProperty.call(options.headers, hk)) {
+            headers[hk] = options.headers[hk];
+          }
+        }
+      }
+      if (!headers["Content-Type"] && !headers["content-type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+      if (!headers.Accept && !headers.accept) {
+        headers.Accept = "application/json";
+      }
+      if (!headers.Authorization && !headers.authorization) {
+        headers.Authorization = "Bearer " + apiKey;
+      } else if (headers.Authorization && !/^Bearer\s+\S/.test(headers.Authorization)) {
+        headers.Authorization = "Bearer " + String(headers.Authorization).replace(/^Bearer\s*/i, "").trim();
+      }
+      if (!apiKey) {
+        throw new Error(
+          window.formatLlmFetchError(
+            { name: "Error", message: "API Key 为空" },
+            label,
+            { url: url, apiKeyPresent: false }
+          )
+        );
+      }
+
+      var referrerPolicy = options.referrerPolicy || "strict-origin-when-cross-origin";
+      var init = {
+        method: options.method || "POST",
+        mode: "cors",
+        credentials: "omit",
+        referrerPolicy: referrerPolicy,
+        headers: headers,
+      };
+      if (options.body != null) {
+        init.body = options.body;
+      }
+
+      var safeReqHeaders = {};
+      for (hk in headers) {
+        if (Object.prototype.hasOwnProperty.call(headers, hk)) {
+          safeReqHeaders[hk] =
+            hk.toLowerCase() === "authorization"
+              ? "Bearer " + (apiKey.length > 8 ? apiKey.slice(0, 4) + "…" + apiKey.slice(-4) : "****")
+              : headers[hk];
+        }
+      }
+      var pageOrigin = typeof location !== "undefined" ? location.origin : "";
+      if (typeof console !== "undefined" && console.groupCollapsed) {
+        console.groupCollapsed("[LLM API] 请求 → " + label);
+        console.log("url", url);
+        console.log("method", init.method);
+        console.log("referrerPolicy", referrerPolicy);
+        console.log("pageOrigin（浏览器将自动作为 Origin 发送）", pageOrigin);
+        console.log("requestHeaders", safeReqHeaders);
+        console.log(
+          "说明",
+          "Origin 为浏览器禁止修改的标头；referrerPolicy 默认 strict-origin-when-cross-origin（避免 no-referrer 导致 Origin: null 被中转站拦截）"
+        );
+        console.groupEnd();
+      }
+
+      var res;
+      try {
+        res = await fetch(url, init);
+      } catch (netErr) {
+        if (typeof console !== "undefined" && console.error) {
+          console.error("[LLM API] 网络层失败 — 未收到 HTTP 响应（不是 403）", {
+            label: label,
+            url: url,
+            errorName: netErr && netErr.name,
+            errorMessage: netErr && netErr.message,
+            pageOrigin: pageOrigin,
+            diagnosis:
+              "Failed to fetch / TypeError 通常表示 CORS 预检失败、DNS、断网或广告拦截；此时 Network 面板往往无 status 或显示 CORS error，而不是 403。",
+            fix:
+              "使用 Live Server (http://localhost)；检查 API 地址是否可达；若接口仅允许后端调用，需自建代理。",
+          });
+        }
+        throw new Error(
+          window.formatLlmFetchError(netErr, label, { url: url, apiKeyPresent: true })
+        );
+      }
+
+      var resHeaders = window.headersToPlainObject(res.headers);
+      if (typeof console !== "undefined" && console.log) {
+        console.log("[LLM API] 响应 ← " + label, {
+          status: res.status,
+          statusText: res.statusText,
+          ok: res.ok,
+          type: res.type,
+          responseHeaders: resHeaders,
+        });
+      }
+
+      if (!res.ok) {
+        var errText = "";
+        try {
+          errText = await res.text();
+        } catch (eRead) {
+          errText = "";
+        }
+        var errJson = null;
+        try {
+          errJson = errText ? JSON.parse(errText) : null;
+        } catch (eJson) {
+          errJson = null;
+        }
+        var apiMsg =
+          errJson && errJson.error && errJson.error.message
+            ? errJson.error.message
+            : errText
+              ? errText.slice(0, 800)
+              : "";
+
+        if (typeof console !== "undefined" && console.error) {
+          console.error("[LLM API] HTTP 错误（已收到状态码 " + res.status + "）", {
+            label: label,
+            url: url,
+            status: res.status,
+            statusText: res.statusText,
+            is403: res.status === 403,
+            is401: res.status === 401,
+            responseBody: errJson || errText,
+            responseHeaders: resHeaders,
+            corsRelatedHeaders: {
+              "access-control-allow-origin": resHeaders["access-control-allow-origin"],
+              "access-control-allow-credentials": resHeaders["access-control-allow-credentials"],
+            },
+          });
+        }
+
+        throw new Error(
+          window.formatLlmHttpError(res, label, { url: url, apiMsg: apiMsg })
+        );
+      }
+
+      return res;
+    };
+
+    (function llmApiPathSelfCheck() {
+      var actual = window.joinLlmApiPath("chat/completions");
+      if (typeof console !== "undefined" && console.log) {
+        console.log("[Ad Variant Lab] LLM API 端点 →", actual);
+      }
+    })();
+
+    if (typeof location !== "undefined" && location.protocol === "file:") {
+      console.warn(
+        "[Ad Variant Lab] 当前为 file:// 协议，跨域 fetch 极易失败。请用 VS Code Live Server 等本地 HTTP 服务器打开本页。"
+      );
+    }
+
+    (function () {
+      if (typeof window.EcommerceTaxonomy === "undefined") {
+        console.warn(
+          "[Ad Variant Lab] EcommerceTaxonomy 未加载；类目推断已禁用，已使用空实现避免脚本中断。"
+        );
+        window.EcommerceTaxonomy = {
+          infer: function () {
+            return "";
+          },
+          getAllCategories: function () {
+            return [];
+          },
+        };
+      }
+
+      var card = document.querySelector(".hero-card");
+      var btnClear = document.getElementById("btn-clear");
+
+      /** Slider axis 0–120s (reference baseline). */
+      var durAbsMin = 0;
+      var durAbsMax = 120;
+
+      /** Script total-duration window (seconds). */
+      var durRangeMin = 15;
+      var durRangeMax = 30;
+
+      var rangeRoot = document.getElementById("duration-range");
+      var rangeInner = document.getElementById("dual-range-inner");
+      var durLabel = document.getElementById("durLabel");
+      var thumbMin = document.getElementById("dur-thumb-min");
+      var thumbMax = document.getElementById("dur-thumb-max");
+
+      function clamp(n, lo, hi) {
+        return Math.max(lo, Math.min(hi, n));
+      }
+
+      function formatDurLabel() {
+        if (!durLabel) return;
+        durLabel.innerHTML =
+          '<span style="color:var(--muted)">Min</span> <span style="color:var(--blue)">' +
+          durRangeMin +
+          's</span> <span style="color:var(--muted)">—</span> <span style="color:var(--muted)">Max</span> <span style="color:var(--blue)">' +
+          durRangeMax +
+          "s</span>";
+      }
+
+      function syncAriaThumbs() {
+        if (!thumbMin || !thumbMax) return;
+        thumbMin.setAttribute("aria-valuemin", String(durAbsMin));
+        thumbMin.setAttribute("aria-valuemax", String(durRangeMax));
+        thumbMin.setAttribute("aria-valuenow", String(durRangeMin));
+        thumbMax.setAttribute("aria-valuemin", String(durRangeMin));
+        thumbMax.setAttribute("aria-valuemax", String(durAbsMax));
+        thumbMax.setAttribute("aria-valuenow", String(durRangeMax));
+      }
+
+      function updateDurUI() {
+        if (!rangeInner) return;
+        var span = durAbsMax - durAbsMin;
+        var pMin = span > 0 ? ((durRangeMin - durAbsMin) / span) * 100 : 0;
+        var pMax = span > 0 ? ((durRangeMax - durAbsMin) / span) * 100 : 100;
+        pMin = clamp(pMin, 0, 100);
+        pMax = clamp(pMax, 0, 100);
+        rangeInner.style.setProperty("--p-min", String(pMin));
+        rangeInner.style.setProperty("--p-max", String(pMax));
+        formatDurLabel();
+        syncAriaThumbs();
+        syncHiddenDurationInputs();
+      }
+
+      function syncHiddenDurationInputs() {
+        var hMin = document.getElementById("durRangeMin");
+        var hMax = document.getElementById("durRangeMax");
+        var tMin = document.getElementById("totalSecMin");
+        var tMax = document.getElementById("totalSecMax");
+        if (hMin) hMin.value = String(durRangeMin);
+        if (hMax) hMax.value = String(durRangeMax);
+        if (tMin) tMin.value = String(durRangeMin);
+        if (tMax) tMax.value = String(durRangeMax);
+      }
+
+      function pointerToSeconds(clientX) {
+        if (!rangeInner) return durAbsMin;
+        var rect = rangeInner.getBoundingClientRect();
+        if (rect.width <= 0) return durAbsMin;
+        var pct = ((clientX - rect.left) / rect.width) * 100;
+        pct = clamp(pct, 0, 100);
+        var raw = durAbsMin + (pct / 100) * (durAbsMax - durAbsMin);
+        return Math.round(raw);
+      }
+
+      function setDragging(on) {
+        if (!rangeRoot) return;
+        rangeRoot.classList.toggle("is-dragging", !!on);
+      }
+
+      function applyMinSeconds(sec) {
+        var s = clamp(sec, durAbsMin, durAbsMax);
+        durRangeMin = s;
+        if (durRangeMin > durRangeMax) durRangeMax = durRangeMin;
+        durRangeMax = clamp(durRangeMax, durAbsMin, durAbsMax);
+        durRangeMin = clamp(durRangeMin, durAbsMin, durAbsMax);
+        updateDurUI();
+      }
+
+      function applyMaxSeconds(sec) {
+        var s = clamp(sec, durAbsMin, durAbsMax);
+        durRangeMax = s;
+        if (durRangeMax < durRangeMin) durRangeMin = durRangeMax;
+        durRangeMin = clamp(durRangeMin, durAbsMin, durAbsMax);
+        durRangeMax = clamp(durRangeMax, durAbsMin, durAbsMax);
+        updateDurUI();
+      }
+
+      function attachThumb(thumb, which) {
+        if (!thumb || !rangeInner) return;
+
+        thumb.addEventListener("pointerdown", function (e) {
+          if (e.button !== 0) return;
+          thumb.classList.add("is-dragging");
+          setDragging(true);
+          try {
+            thumb.setPointerCapture(e.pointerId);
+          } catch (err) {}
+
+          function move(ev) {
+            var sec = pointerToSeconds(ev.clientX);
+            if (which === "min") applyMinSeconds(sec);
+            else applyMaxSeconds(sec);
+          }
+
+          function up() {
+            thumb.classList.remove("is-dragging");
+            setDragging(false);
+            try {
+              thumb.releasePointerCapture(e.pointerId);
+            } catch (err2) {}
+            window.removeEventListener("pointermove", move);
+            window.removeEventListener("pointerup", up);
+            window.removeEventListener("pointercancel", up);
+          }
+
+          window.addEventListener("pointermove", move);
+          window.addEventListener("pointerup", up);
+          window.addEventListener("pointercancel", up);
+          e.preventDefault();
+        });
+
+        thumb.addEventListener("keydown", function (e) {
+          var step = e.shiftKey ? 5 : 1;
+          if (which === "min") {
+            if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+              applyMinSeconds(durRangeMin - step);
+              e.preventDefault();
+            } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+              applyMinSeconds(durRangeMin + step);
+              e.preventDefault();
+            }
+          } else {
+            if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+              applyMaxSeconds(durRangeMax - step);
+              e.preventDefault();
+            } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+              applyMaxSeconds(durRangeMax + step);
+              e.preventDefault();
+            }
+          }
+        });
+      }
+
+      function attachRailSeek() {
+        if (!rangeInner || !thumbMin || !thumbMax) return;
+        rangeInner.addEventListener("pointerdown", function (e) {
+          if (e.target.closest(".range-thumb")) return;
+          if (e.button !== 0) return;
+          e.preventDefault();
+          var sec = pointerToSeconds(e.clientX);
+          var rect = rangeInner.getBoundingClientRect();
+          var pct = rect.width > 0 ? ((e.clientX - rect.left) / rect.width) * 100 : 0;
+          var pMin = ((durRangeMin - durAbsMin) / (durAbsMax - durAbsMin)) * 100;
+          var pMax = ((durRangeMax - durAbsMin) / (durAbsMax - durAbsMin)) * 100;
+          var distMin = Math.abs(pct - pMin);
+          var distMax = Math.abs(pct - pMax);
+          if (distMin <= distMax) applyMinSeconds(sec);
+          else applyMaxSeconds(sec);
+        });
+      }
+
+      function resetDurationRange() {
+        durRangeMin = 15;
+        durRangeMax = 30;
+        updateDurUI();
+      }
+
+      function autoResizeTextarea(el) {
+        if (!el) return;
+        el.style.height = "auto";
+        void el.offsetHeight;
+        var sh = el.scrollHeight;
+        el.style.height = sh + "px";
+        if (el.id === "selling-textarea") {
+          var sp = document.querySelector(".selling-panel");
+          if (sp) {
+            sp.style.minHeight = Math.max(160, sh + 28) + "px";
+          }
+        }
+      }
+
+      function bindAutoResize(el) {
+        if (!el) return;
+        function onChange() {
+          autoResizeTextarea(el);
+        }
+        el.addEventListener("input", onChange);
+        el.addEventListener("focus", onChange);
+        onChange();
+      }
+
+      var productInput = document.getElementById("product-input");
+      var categoryInput = document.getElementById("category-input");
+      var sellingTextarea = document.getElementById("selling-textarea");
+      var sellingFileInput = document.getElementById("selling-file-input");
+      var productDropZone = document.getElementById("product-drop-zone");
+      var productImageInput = document.getElementById("product-image-input");
+      var productFiles = [];
+
+      bindAutoResize(sellingTextarea);
+
+      window.__getStoryboardImageFiles = function () {
+        return productFiles;
+      };
+
+      function removeProductFileAt(index) {
+        var i = Number(index);
+        if (isNaN(i) || i < 0 || i >= productFiles.length) return;
+        productFiles.splice(i, 1);
+        renderGallery();
+      }
+
+      function hasProductReferenceImage() {
+        return productFiles.length > 0;
+      }
+
+      function isProductImageFile(f) {
+        if (!f) return false;
+        if (f.type && /^image\//i.test(f.type)) return true;
+        return /\.(jpe?g|png|gif|webp|bmp|heic|heif|svg)$/i.test(f.name || "");
+      }
+
+      function revokeGalleryBlobUrls(gallery) {
+        if (!gallery) return;
+        var imgs = gallery.querySelectorAll(".gallery-item img");
+        for (var gi = 0; gi < imgs.length; gi++) {
+          var s = imgs[gi].src || "";
+          if (s.indexOf("blob:") === 0) {
+            try {
+              URL.revokeObjectURL(s);
+            } catch (errRev) {}
+          }
+        }
+      }
+
+      function renderGallery() {
+        var gallery = document.getElementById("product-gallery");
+        var container = document.querySelector(".gallery-container");
+        var dropZone = document.getElementById("product-drop-zone");
+
+        if (!gallery) {
+          var totalEarly = productFiles.length + 1;
+          var colsEarly = 2;
+          if (totalEarly > 16) colsEarly = 5;
+          else if (totalEarly > 9) colsEarly = 4;
+          else if (totalEarly > 4) colsEarly = 3;
+          if (container) container.style.setProperty("--grid-cols", colsEarly);
+          return;
+        }
+
+        revokeGalleryBlobUrls(gallery);
+        gallery.innerHTML = "";
+
+        if (productFiles.length > 0) {
+          if (dropZone) dropZone.classList.add("drop-zone--has-image");
+          productFiles.forEach(function (file, index) {
+            var url = URL.createObjectURL(file);
+            var item = document.createElement("div");
+            item.className = "gallery-item";
+            item.setAttribute("data-visual-class", "");
+            item.setAttribute("data-visual-features", "");
+            item.innerHTML =
+              '<img src="' +
+              url +
+              '" alt=""><button type="button" class="gallery-item__del" data-index="' +
+              index +
+              '" aria-label="\u5220\u9664">\u00d7</button>';
+            gallery.appendChild(item);
+          });
+        } else {
+          if (dropZone) dropZone.classList.remove("drop-zone--has-image");
+        }
+
+        var total = productFiles.length + 1;
+        var cols = 2;
+        if (total > 16) cols = 5;
+        else if (total > 9) cols = 4;
+        else if (total > 4) cols = 3;
+
+        if (container) container.style.setProperty("--grid-cols", cols);
+
+        syncCategoryFromEngine();
+      }
+
+      (function bindProductGalleryDelegation() {
+        var gallery = document.getElementById("product-gallery");
+        if (!gallery || gallery.dataset.delDelegationBound === "1") return;
+        gallery.dataset.delDelegationBound = "1";
+        gallery.addEventListener("click", function (e) {
+          var t = e.target;
+          if (!t || !t.closest) return;
+          var btn = t.closest(".gallery-item__del");
+          if (!btn || !gallery.contains(btn)) return;
+          e.preventDefault();
+          var idx = btn.getAttribute("data-index");
+          removeProductFileAt(idx == null ? NaN : Number(idx));
+        });
+      })();
+
+      async function handleIncomingFiles(filesOrItems) {
+        var newFiles = [];
+        Array.prototype.forEach.call(filesOrItems || [], function (f) {
+          if (isProductImageFile(f)) newFiles.push(f);
+        });
+        productFiles = productFiles.concat(newFiles);
+        renderGallery();
+      }
+
+      function clearAllProductImages() {
+        productFiles = [];
+        renderGallery();
+      }
+
+      function syncCategoryFromEngine() {
+        if (!categoryInput) return;
+
+        var pText = productInput ? String(productInput.value || "").trim() : "";
+        var hasImg = hasProductReferenceImage();
+
+        if (!pText && !hasImg) {
+          return;
+        }
+
+        var engine = window.EcommerceTaxonomy;
+        if (!engine || typeof engine.infer !== "function") return;
+
+        var briefTxt = sellingTextarea ? String(sellingTextarea.value || "").trim() : "";
+
+        var catHint = categoryInput ? String(categoryInput.value || "").trim() : "";
+
+        var bestCat = engine.infer({
+          productText: pText,
+          briefText: briefTxt,
+          hasImage: hasImg,
+          categoryText: catHint,
+        });
+
+        var curVal = String(categoryInput.value || "").trim();
+        var knownCats =
+          typeof engine.getAllCategories === "function" ? engine.getAllCategories() : [];
+
+        if (!curVal || knownCats.indexOf(curVal) !== -1) {
+          if (categoryInput.value !== bestCat) {
+            categoryInput.value = bestCat;
+          }
+        }
+      }
+
+      function bindInstantCategorySync(el) {
+        if (!el) return;
+        ["input", "compositionend", "paste", "cut"].forEach(function (ev) {
+          el.addEventListener(ev, syncCategoryFromEngine, false);
+        });
+      }
+      bindInstantCategorySync(productInput);
+      bindInstantCategorySync(sellingTextarea);
+
+      function fileExtLower(f) {
+        if (!f || typeof f.name !== "string") return "";
+        var name = f.name.replace(/^.*[\\/]/, "");
+        var dot = name.lastIndexOf(".");
+        if (dot < 0 || dot === name.length - 1) return "";
+        return name.slice(dot + 1).toLowerCase();
+      }
+
+      function isBriefFile(f) {
+        if (!f) return false;
+        var mt = (f.type || "").toLowerCase();
+        if (/^image\//i.test(mt)) return true;
+        if (mt === "application/pdf") return true;
+        if (mt === "application/vnd.openxmlformats-officedocument.presentationml.presentation") return true;
+        if (mt === "text/html") return true;
+        if (mt === "application/vnd.ms-excel" || mt === "application/excel") return true;
+        if (mt === "text/csv" || mt === "application/csv") return true;
+        var ext = fileExtLower(f);
+        return (
+          [
+            "txt",
+            "md",
+            "csv",
+            "docx",
+            "xls",
+            "xlsx",
+            "pdf",
+            "pptx",
+            "html",
+            "htm",
+            "json",
+            "log",
+            "jpeg",
+            "jpg",
+            "png",
+            "gif",
+            "webp",
+            "bmp",
+            "heic",
+            "heif",
+            "svg",
+          ].indexOf(ext) !== -1
+        );
+      }
+
+      var LAB_BUSY_PARSE_LABEL = "AI 大脑正在深度审片中，请稍候...";
+
+      function setLabBusy(on) {
+        var el = document.getElementById("labBusyOverlay");
+        if (!el) return;
+        if (on) {
+          var lab = el.querySelector(".lab-busy-label");
+          if (lab) lab.textContent = LAB_BUSY_PARSE_LABEL;
+          else {
+            var cardOnly = el.querySelector(".lab-busy-card");
+            if (cardOnly) cardOnly.textContent = LAB_BUSY_PARSE_LABEL;
+          }
+        }
+        el.classList.toggle("is-visible", !!on);
+        el.setAttribute("aria-hidden", on ? "false" : "true");
+      }
+
+      window.setLabBusy = setLabBusy;
+
+      function feedbackBriefImportDone() {
+        if (!sellingTextarea || !sellingPanel) return;
+        requestAnimationFrame(function () {
+          sellingTextarea.scrollTop = sellingTextarea.scrollHeight;
+          sellingTextarea.focus({ preventScroll: true });
+        });
+      }
+
+      function getBriefFileDisplayName(file, index) {
+        var i = index != null ? index : 0;
+        if (!file || typeof file !== "object") return "file-" + i;
+        var raw = file.name;
+        if (typeof raw === "string") {
+          raw = raw.replace(/^.*[\\/]/, "");
+          if (raw.length) return raw;
+        }
+        return "file-" + i;
+      }
+
+      function briefPromiseTimeout(ms, label) {
+        var msg = label || "operation";
+        return new Promise(function (_, reject) {
+          window.setTimeout(function () {
+            reject(new Error(msg + " 超时（" + ms + "ms）"));
+          }, ms);
+        });
+      }
+
+      async function briefRaceWithTimeout(promise, ms, label) {
+        return Promise.race([promise, briefPromiseTimeout(ms, label)]);
+      }
+
+      /**
+       * 将 LLM 返回的 JSON 解析结果渲染为卖点区 Markdown（仅非空块带标题）
+       */
+      function renderBriefFromParsed(parsed) {
+        parsed = parsed || {};
+        var core = parsed.core_usps || [];
+        var secondary = parsed.secondary_usps || [];
+        var specs = parsed.specs || [];
+        var scenes = parsed.scenes || [];
+
+        function mapNumberedLines(arr) {
+          var a = Array.isArray(arr) ? arr : [];
+          var lines = a
+            .map(function (s) {
+              return String(s).trim();
+            })
+            .filter(Boolean);
+          return lines
+            .map(function (line, i) {
+              return i + 1 + ". " + line;
+            })
+            .join("\n");
+        }
+
+        function joinLines(arr) {
+          var a = Array.isArray(arr) ? arr : [];
+          return a
+            .map(function (s) {
+              return String(s).trim();
+            })
+            .filter(Boolean)
+            .join("\n");
+        }
+
+        var junkSceneRe = /^(正面|背面|侧面|图\d+)$/;
+
+        var parts = [];
+        if (core.length > 0) {
+          parts.push("--- 【核心卖点】 ---");
+          parts.push(mapNumberedLines(core));
+        }
+        if (secondary.length > 0) {
+          parts.push("--- 【次要卖点】 ---");
+          parts.push(mapNumberedLines(secondary));
+        }
+        if (specs.length > 0) {
+          parts.push("--- 【基础物理参数】 ---");
+          parts.push(joinLines(specs));
+        }
+
+        var cleanScenes = [];
+        if (Array.isArray(scenes)) {
+          for (var si = 0; si < scenes.length; si++) {
+            var sc = String(scenes[si] == null ? "" : scenes[si]).trim();
+            if (!sc) continue;
+            if (junkSceneRe.test(sc)) continue;
+            cleanScenes.push(sc);
+          }
+        }
+        if (cleanScenes.length > 0) {
+          parts.push("--- 【广告参考场景】 ---");
+          parts.push(cleanScenes.join("\n"));
+        }
+
+        if (parts.length === 0) return "（未检测到有效卖点信息）";
+        return parts.join("\n\n").trim();
+      }
+
+      /**
+       * LLM 导演解析：OpenAI Chat Completions → 强制 JSON → Markdown 四段输出（全行业通用）
+       */
+      async function directorVisionTransformLLM(text, apiKey) {
+        var t = String(text || "").trim();
+        if (!t) return "";
+        var key = String(apiKey || "").trim();
+        if (!key) throw new Error("缺少 API Key");
+
+        var systemPrompt = `你是一位拥有极致审美与商业洞察力的【精英广告片导演】。
+
+【第一指令：全行业专家级纠错（OCR 校准）】
+利用你的行业知识库，对 OCR 误读进行“无情修正”：
+- 钟表珠宝：现钱/现詹 -> 玑镂 (Guilloché)；表交 -> 表圈；上蓄/上络 -> 上弦；小秘针 -> 小秒针；太子刀 -> 太子妃针；鳄鱼皮 -> 方形鳞纹鳄鱼皮；4赫效 -> 4赫兹；Spiromaxs -> Spiromax®。
+- 3C数码/工业：自动校准赫兹、功率、扭矩等术语。
+
+【第二指令：导演级要素分拣（非机械划分）】
+1. 核心卖点 (Core USPs)：提取原文中【最能体现产品溢价、技术高度、或感官美学】的 4 条原句。如果是奢侈品，其核心技术（如65h动力）必须作为卖点保留！
+2. 基础参数 (Specs)：将所有【非感性】的规格事实（如：直径、厚度、防水深度、零件数、振频）整理为 "名称: 数值"。
+3. 去重逻辑：
+   - 核心卖点中提到的关键数据，参数区可以保留（为了数据完整性）。
+   - 【严禁】在次要卖点中堆砌“针扣、表带材质”等纯物理配置，这些请直接丢进参数区。
+
+【第三指令：场景与禁令】
+- 场景 (Scenes)：必须是物理拍摄环境。严禁提取“正面/背面”！原文无场景则返回空数组 []。
+- 严禁脑补：你可以修正术语，但绝对严禁自创原文没有的夸赞之词。
+
+【输出格式】：
+严格返回 JSON：{"core_usps":[], "secondary_usps":[], "specs":[], "scenes":[]}。`;
+
+        var res = await window.llmApiFetch("chat/completions", {
+          label: "卖点简报",
+          apiKey: key,
+          body: JSON.stringify({
+            model: window.getTextModel(),
+            temperature: 0.0,
+            messages: [
+              { role: "system", content: systemPrompt },
+              {
+                role: "user",
+                content:
+                  "请按 system 三步执行：纠错 → 分拣要素 → 输出 JSON（空数组勿填占位）。原始资料如下：\n\n" +
+                  t,
+              },
+            ],
+            response_format: { type: "json_object" },
+          }),
+        });
+
+        var data = await res.json();
+        var content =
+          data &&
+          data.choices &&
+          data.choices[0] &&
+          data.choices[0].message &&
+          data.choices[0].message.content;
+        if (!content) throw new Error("LLM 响应为空");
+
+        var rawStr = String(content)
+          .replace(/```json\s*/gi, "")
+          .replace(/```\s*/g, "")
+          .trim();
+
+        var parsed = JSON.parse(rawStr);
+        return renderBriefFromParsed(parsed);
+      }
+
+      function ensurePdfJsWorker() {
+        if (typeof pdfjsLib === "undefined") return;
+        var wBase = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+        var src = wBase + "pdf.worker.min.js";
+        try {
+          if (typeof pdfjsLib.GlobalWorkerOptions !== "undefined") {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = src;
+          }
+        } catch (eW) {
+          console.warn("[Brief] pdf.js workerSrc 赋值异常:", eW);
+        }
+      }
+
+      async function extractPdfFullText(file, label) {
+        var tag = label || getBriefFileDisplayName(file, 0);
+        if (typeof pdfjsLib === "undefined") {
+          try {
+            alert("PDF 插件加载失败");
+          } catch (eA) {}
+          console.warn("[Brief] pdf.js (pdfjsLib) 未加载:", tag);
+          return "";
+        }
+        try {
+          if (!file || typeof file.arrayBuffer !== "function") {
+            console.warn("[Brief] 文件无法读取为 ArrayBuffer:", tag);
+            return "";
+          }
+          ensurePdfJsWorker();
+          var buf = await file.arrayBuffer();
+          console.log("[Brief] PDF ArrayBuffer 字节:", tag, buf && buf.byteLength != null ? buf.byteLength : 0);
+          if (!buf || !buf.byteLength) {
+            console.warn("[Brief] PDF 文件为空:", tag);
+            return "";
+          }
+          var pdf;
+          try {
+            pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+          } catch (eDoc) {
+            console.error("[Brief] PDF getDocument（已降级为空）:", tag, eDoc);
+            return "";
+          }
+          var out = [];
+          for (var pi = 1; pi <= pdf.numPages; pi++) {
+            try {
+              var page = await pdf.getPage(pi);
+              var content = await page.getTextContent();
+              var pageBuf = "";
+              for (var ti = 0; ti < content.items.length; ti++) {
+                var item = content.items[ti];
+                pageBuf += item.str || "";
+                if (item.hasEOL) pageBuf += "\n";
+                else pageBuf += " ";
+              }
+              pageBuf = pageBuf.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+              if (pageBuf) out.push(pageBuf);
+            } catch (ePage) {
+              console.warn("[Brief] PDF 单页跳过:", tag, "page", pi, ePage);
+            }
+          }
+          return out.join("\n").trim();
+        } catch (eAll) {
+          console.error("[Brief] PDF 解析外层异常（已降级为空）:", tag, eAll);
+          return "";
+        }
+      }
+
+      function extractPptxAtTagsFromXml(xml) {
+        var texts = [];
+        var reAt = /<a:t[^>]*>([\s\S]*?)<\/a:t>/gi;
+        var m;
+        while ((m = reAt.exec(xml)) !== null) {
+          var s = String(m[1] || "")
+            .replace(/<[^>]+>/g, "")
+            .trim();
+          if (s) texts.push(s);
+        }
+        return texts.join(" ").replace(/\s+/g, " ").trim();
+      }
+
+      async function extractPptxSlideText(file, label) {
+        var tag = label || getBriefFileDisplayName(file, 0);
+        try {
+          if (typeof JSZip === "undefined") {
+            console.warn("[Brief] JSZip 未加载:", tag);
+            return "";
+          }
+          if (!file || typeof file.arrayBuffer !== "function") {
+            console.warn("[Brief] PPTX 文件无法读取:", tag);
+            return "";
+          }
+          var buf = await file.arrayBuffer();
+          console.log("[Brief] PPTX ArrayBuffer 字节:", tag, buf && buf.byteLength != null ? buf.byteLength : 0);
+          var zip;
+          try {
+            zip = await JSZip.loadAsync(buf);
+          } catch (eZip) {
+            console.error("[Brief] PPTX JSZip.loadAsync（已降级为空）:", tag, eZip);
+            return "";
+          }
+          var names = Object.keys(zip.files).filter(function (n) {
+            return /^ppt\/slides\/slide[^/]+\.xml$/i.test(n) && n.indexOf("_rels") === -1;
+          });
+          if (!names.length) {
+            console.warn("[Brief] PPTX 未找到 ppt/slides/*.xml:", tag);
+            return "";
+          }
+          names.sort(function (a, b) {
+            var ma = a.match(/slide([^/]+)\.xml/i);
+            var mb = b.match(/slide([^/]+)\.xml/i);
+            var na = ma && /^\d+$/.test(ma[1]) ? parseInt(ma[1], 10) : ma ? ma[1] : "";
+            var nb = mb && /^\d+$/.test(mb[1]) ? parseInt(mb[1], 10) : mb ? mb[1] : "";
+            if (typeof na === "number" && typeof nb === "number") return na - nb;
+            return String(a).localeCompare(String(b));
+          });
+          var slides = [];
+          for (var si = 0; si < names.length; si++) {
+            try {
+              var xf = zip.file(names[si]);
+              if (!xf || xf.dir) {
+                console.log("[Brief] PPTX 跳过（无 XML 条目）:", tag, names[si]);
+                continue;
+              }
+              var xml = await xf.async("string");
+              var block = extractPptxAtTagsFromXml(xml);
+              if (block) slides.push(block);
+            } catch (eSlide) {
+              console.warn("[Brief] PPTX 单页跳过:", tag, names[si], eSlide);
+            }
+          }
+          return slides.join("\n").trim();
+        } catch (eAll) {
+          console.error("[Brief] PPTX 解析外层异常（已降级为空）:", tag, eAll);
+          return "";
+        }
+      }
+
+      async function extractHtmlBodyPlainText(file) {
+        var html = await file.text();
+        var doc = new DOMParser().parseFromString(html, "text/html");
+        var removeSel = doc.querySelectorAll("script, style, noscript, template, iframe");
+        var ri;
+        for (ri = 0; ri < removeSel.length; ri++) {
+          var node = removeSel[ri];
+          if (node && node.parentNode) node.parentNode.removeChild(node);
+        }
+        var body = doc.body;
+        if (!body) return "";
+        var txt = String(body.innerText != null ? body.innerText : body.textContent || "").trim();
+        return txt.replace(/\s+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+      }
+
+      function isRasterImageForOcr(file, ext) {
+        var mt = (file.type || "").toLowerCase();
+        if (/^image\/(jpeg|png|webp|gif|bmp)$/i.test(mt)) return true;
+        return ["jpg", "jpeg", "png", "webp", "gif", "bmp"].indexOf(ext) !== -1;
+      }
+
+      var briefOcrWorker = null;
+
+      function briefOcrWaitMs(file) {
+        var s = file && file.size != null ? Number(file.size) : 0;
+        if (isNaN(s) || s < 0) s = 0;
+        return Math.min(900000, Math.max(180000, 120000 + Math.floor(s / 2048) * 400));
+      }
+
+      async function briefEnsureOcrWorker() {
+        if (typeof Tesseract === "undefined") {
+          console.warn("[Brief] Tesseract 全局对象不存在，无法 OCR");
+          return null;
+        }
+        if (briefOcrWorker) return briefOcrWorker;
+        var initMs = 90000;
+        if (typeof Tesseract.createWorker !== "function") return null;
+        try {
+          briefOcrWorker = await briefRaceWithTimeout(
+            Tesseract.createWorker("chi_sim+eng", 1, {
+              logger: function () {},
+            }),
+            initMs,
+            "Tesseract.createWorker(chi_sim+eng)"
+          );
+          return briefOcrWorker;
+        } catch (eW1) {
+          console.warn(
+            "[Brief] OCR Worker 初始化失败（常见于训练数据/语言包网络不可用），将尝试降级:",
+            eW1
+          );
+          try {
+            briefOcrWorker = await briefRaceWithTimeout(
+              Tesseract.createWorker("chi_sim+eng"),
+              initMs,
+              "Tesseract.createWorker(chi_sim+eng,fallback)"
+            );
+            return briefOcrWorker;
+          } catch (eW2) {
+            console.warn("[Brief] OCR Worker 降级仍失败，将尝试 Tesseract.recognize:", eW2);
+            briefOcrWorker = null;
+            return null;
+          }
+        }
+      }
+
+      async function briefTerminateOcrWorker() {
+        if (briefOcrWorker && typeof briefOcrWorker.terminate === "function") {
+          try {
+            await briefOcrWorker.terminate();
+          } catch (eTerm) {
+            console.error("[Brief] OCR worker terminate:", eTerm);
+          }
+        }
+        briefOcrWorker = null;
+      }
+
+      async function extractImageOcr(file, ext, label) {
+        var tag = label || getBriefFileDisplayName(file, 0);
+        console.log("[Brief] 正在进行 OCR 识别:", tag, ext || "");
+        if (!isRasterImageForOcr(file, ext)) {
+          console.warn("[Brief] 当前图片格式跳过 OCR:", tag, ext);
+          return "";
+        }
+        var waitMs = briefOcrWaitMs(file);
+        console.log("[Brief] OCR 最长等待 ms:", tag, waitMs);
+        await briefEnsureOcrWorker();
+        var worker = briefOcrWorker;
+        if (worker && typeof worker.recognize === "function") {
+          try {
+            var r1 = await briefRaceWithTimeout(worker.recognize(file), waitMs, "worker.recognize");
+            return r1 && r1.data && r1.data.text ? String(r1.data.text).trim() : "";
+          } catch (eR1) {
+            console.warn("[Brief] worker.recognize 失败或超时，尝试 recognize 直调:", tag, eR1);
+          }
+        }
+        if (typeof Tesseract.recognize === "function") {
+          try {
+            var r2 = await briefRaceWithTimeout(
+              Tesseract.recognize(file, "chi_sim+eng", { logger: function () {} }),
+              waitMs,
+              "Tesseract.recognize"
+            );
+            return r2 && r2.data && r2.data.text ? String(r2.data.text).trim() : "";
+          } catch (eR2) {
+            console.warn("[Brief] Tesseract.recognize 失败（已降级为空）:", tag, eR2);
+            return "";
+          }
+        }
+        console.warn("[Brief] Tesseract 不可用，无法 OCR:", tag);
+        return "";
+      }
+
+      async function extractDocxWithMammoth(file, label) {
+        var tag = label || getBriefFileDisplayName(file, 0);
+        if (!window.mammoth || typeof file.arrayBuffer !== "function") throw new Error("mammoth 未加载");
+        var buf = await file.arrayBuffer();
+        console.log("[Brief] DOCX ArrayBuffer 字节:", tag, buf && buf.byteLength != null ? buf.byteLength : 0);
+        var result = await window.mammoth.extractRawText({ arrayBuffer: buf });
+        return result && result.value ? String(result.value).trim() : "";
+      }
+
+      async function extractExcelFirstSheetAsText(file, label) {
+        var tag = label || getBriefFileDisplayName(file, 0);
+        if (typeof window.XLSX === "undefined" || typeof window.XLSX.read !== "function") {
+          throw new Error("SheetJS（xlsx.full.min.js）未正确加载，请检查网络与 cdnjs");
+        }
+        if (typeof file.arrayBuffer !== "function") throw new Error("文件无法读取为 ArrayBuffer");
+        var buf = await file.arrayBuffer();
+        console.log("[Brief] 表格 ArrayBuffer 字节:", tag, buf && buf.byteLength != null ? buf.byteLength : 0);
+        if (!buf || !buf.byteLength) throw new Error("表格文件为空");
+        var wb = window.XLSX.read(buf, {
+          type: "array",
+          cellDates: true,
+          dense: false,
+        });
+        if (!wb || !wb.SheetNames || !wb.SheetNames.length) return "";
+        var sheetName = wb.SheetNames[0];
+        var sheet = wb.Sheets[sheetName];
+        if (!sheet) return "";
+        var rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false });
+        var lines = [];
+        for (var ri = 0; ri < rows.length; ri++) {
+          var row = rows[ri];
+          if (!row || !row.length) continue;
+          var cells = [];
+          for (var ci = 0; ci < row.length; ci++) {
+            var c = row[ci];
+            if (c !== "" && c != null) cells.push(String(c).trim());
+          }
+          if (!cells.length) continue;
+          var line = cells.join("\t");
+          if (/https?:\/\/|aci\s*=/i.test(line)) continue;
+          lines.push(line);
+        }
+        return lines.join("\n").trim();
+      }
+
+      function normalizeBriefFile(file) {
+        var ext = (fileExtLower(file) || "").toLowerCase();
+        var mt = (file.type || "").toLowerCase();
+        if (!ext) {
+          if (mt === "application/pdf") ext = "pdf";
+          else if (mt === "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+            ext = "pptx";
+          else if (mt === "text/html") ext = "html";
+          else if (mt === "application/vnd.ms-excel" || mt === "application/excel") ext = "xls";
+          else if (mt === "text/csv" || mt === "application/csv") ext = "csv";
+          else if (mt === "image/jpeg" || mt === "image/jpg") ext = "jpeg";
+          else if (mt === "image/png") ext = "png";
+          else if (mt === "image/webp") ext = "webp";
+          else if (mt === "image/gif") ext = "gif";
+          else if (mt === "image/bmp") ext = "bmp";
+        }
+        return { ext: ext, mt: mt };
+      }
+
+      async function extractOneBriefFile(file, index) {
+        var label = getBriefFileDisplayName(file, index);
+        var norm = normalizeBriefFile(file);
+        var ext = (norm.ext || "").toLowerCase();
+        var mt = norm.mt;
+
+        var imgByExt = ["png", "jpg", "jpeg", "webp", "gif", "bmp"];
+        if (imgByExt.indexOf(ext) !== -1) {
+          console.log("[Brief] 按后缀进入图片 OCR:", label, ext);
+          return await extractImageOcr(file, ext, label);
+        }
+        if (ext === "pdf") {
+          return await extractPdfFullText(file, label);
+        }
+        if (ext === "pptx") {
+          return await extractPptxSlideText(file, label);
+        }
+        if (ext === "html" || ext === "htm") {
+          return await extractHtmlBodyPlainText(file);
+        }
+        if (ext === "txt" || ext === "md") {
+          var t1 = await file.text();
+          console.log("[Brief] 文本文件字符:", label, String(t1).length);
+          return String(t1).trim();
+        }
+        if (ext === "csv") {
+          try {
+            var csvSheet = await extractExcelFirstSheetAsText(file, label);
+            if (csvSheet) return csvSheet;
+          } catch (eCsv) {
+            console.error("[Brief] CSV via SheetJS failed, fallback text:", label, eCsv);
+          }
+          var t2 = await file.text();
+          return String(t2).trim();
+        }
+        if (ext === "docx") {
+          return await extractDocxWithMammoth(file, label);
+        }
+        if (ext === "xlsx" || ext === "xls") {
+          return await extractExcelFirstSheetAsText(file, label);
+        }
+        if (mt.indexOf("image/") === 0) {
+          var sub = mt.split("/")[1] || "";
+          if (sub === "jpeg") sub = "jpg";
+          console.log("[Brief] 按 MIME 进入图片 OCR:", label, mt);
+          return await extractImageOcr(file, sub || "png", label);
+        }
+        if (mt.indexOf("text/") === 0 || ext === "json" || ext === "log") {
+          var t3 = await file.text();
+          console.log("[Brief] 文本类字符:", label, String(t3).length);
+          return String(t3).trim();
+        }
+        throw new Error("不支持的简报文件类型: ." + (ext || mt || "unknown"));
+      }
+
+      async function handleBriefFiles(files) {
+        var apiKeyEl = document.getElementById("llm-api-key");
+        var apiKey = apiKeyEl ? String(apiKeyEl.value || "").trim() : "";
+        if (!apiKey) return alert("请先输入 OPENAI API KEY！");
+
+        var list = Array.prototype.slice.call(files || []).filter(Boolean);
+        if (!list.length) return;
+
+        var prefetchOcr = false;
+        for (var prei = 0; prei < list.length; prei++) {
+          var pf = list[prei];
+          var pn = normalizeBriefFile(pf);
+          var pext = pn.ext;
+          var pmt = (pf.type || "").toLowerCase();
+          if (pmt.indexOf("image/") === 0) prefetchOcr = true;
+          else if (["png", "jpg", "jpeg", "gif", "webp", "bmp"].indexOf(pext) !== -1) prefetchOcr = true;
+        }
+        if (prefetchOcr) {
+          try {
+            await briefEnsureOcrWorker();
+          } catch (ePre) {
+            console.warn("[Brief] OCR Worker 预初始化失败（解析阶段将重试）:", ePre);
+          }
+        }
+
+        setLabBusy(true);
+        var labBusyOverlayEl = document.getElementById("labBusyOverlay");
+        if (labBusyOverlayEl) {
+          var busyCardEl = labBusyOverlayEl.querySelector(".lab-busy-card");
+          if (busyCardEl) busyCardEl.innerText = "AI 大脑正在深度审片中，请稍候...";
+        }
+
+        var totalRawText = "";
+
+        try {
+          for (var fi = 0; fi < list.length; fi++) {
+            try {
+              var extracted = await extractOneBriefFile(list[fi], fi);
+              extracted = String(extracted || "").trim();
+              if (extracted) {
+                if (totalRawText) totalRawText += "\n\n";
+                totalRawText += extracted;
+              }
+            } catch (errOne) {
+              console.warn("[Brief] 单文件解析失败:", list[fi] && list[fi].name, errOne);
+            }
+          }
+
+          var merged = totalRawText.trim();
+          if (merged && sellingTextarea) {
+            try {
+              var directed = await directorVisionTransformLLM(merged, apiKey);
+              directed = String(directed || "").trim();
+              sellingTextarea.value = directed || merged;
+              feedbackBriefImportDone();
+            } catch (eDir) {
+              console.error("[Brief] directorVisionTransformLLM:", eDir);
+              sellingTextarea.value =
+                "【API 请求失败】" + (eDir && eDir.message ? eDir.message : String(eDir));
+            }
+          } else if (list.length && sellingTextarea) {
+            try {
+              alert("未能从所选文件中解析出有效文本。");
+            } catch (eAl) {}
+          }
+
+          syncSellingPanelHint();
+          syncCategoryFromEngine();
+        } catch (fatalErr) {
+          console.error("[Brief] 解析流程崩溃:", fatalErr);
+        } finally {
+          await briefTerminateOcrWorker();
+          setLabBusy(false);
+          if (sellingTextarea) {
+            autoResizeTextarea(sellingTextarea);
+            try {
+              sellingTextarea.dispatchEvent(new Event("input"));
+            } catch (eInp) {}
+          }
+        }
+      }
+
+      /** 递归扫描 FileSystemEntry（文件或目录），filterFn(file) 为真则收集 */
+      function scanFilesRecursively(item, fileList, filterFn) {
+        return new Promise(function (resolve) {
+          if (!item) {
+            resolve();
+            return;
+          }
+          if (item.isFile) {
+            item.file(
+              function (file) {
+                if (file && filterFn(file)) fileList.push(file);
+                resolve();
+              },
+              function () {
+                resolve();
+              }
+            );
+            return;
+          }
+          if (item.isDirectory) {
+            var reader = item.createReader();
+            var allEntries = [];
+            function readAll() {
+              reader.readEntries(
+                function (entries) {
+                  if (entries && entries.length) {
+                    allEntries = allEntries.concat(Array.prototype.slice.call(entries));
+                    readAll();
+                  } else {
+                    Promise.all(
+                      allEntries.map(function (entry) {
+                        return scanFilesRecursively(entry, fileList, filterFn);
+                      })
+                    ).then(function () {
+                      resolve();
+                    });
+                  }
+                },
+                function () {
+                  resolve();
+                }
+              );
+            }
+            readAll();
+            return;
+          }
+          resolve();
+        });
+      }
+
+      function collectClipboardImageFiles(dt) {
+        var out = [];
+        if (!dt || !dt.items || !dt.items.length) return out;
+        for (var i = 0; i < dt.items.length; i++) {
+          var it = dt.items[i];
+          if (it.kind === "file") {
+            var f = it.getAsFile && it.getAsFile();
+            if (f) out.push(f);
+          }
+        }
+        return out;
+      }
+
+      function activeElementIsProductLineTextInput(el) {
+        if (!el || el.tagName !== "INPUT") return false;
+        var ty = el.type || "text";
+        if (
+          ty !== "text" &&
+          ty !== "search" &&
+          ty !== "url" &&
+          ty !== "email" &&
+          ty !== "password"
+        )
+          return false;
+        var id = el.id || "";
+        return id === "product-input" || id === "category-input";
+      }
+
+      function clipboardHasPlainText(dt) {
+        if (!dt || typeof dt.getData !== "function") return false;
+        try {
+          var txt = dt.getData("text/plain");
+          return txt != null && String(txt).trim().length > 0;
+        } catch (errCt) {
+          return false;
+        }
+      }
+
+      if (productDropZone && productImageInput) {
+        productDropZone.addEventListener("click", function () {
+          productImageInput.click();
+        });
+        productDropZone.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            productImageInput.click();
+          }
+        });
+        productDropZone.addEventListener("dragover", function (e) {
+          e.preventDefault();
+        });
+        productDropZone.addEventListener("drop", async function (e) {
+          e.preventDefault();
+          var dt = e.dataTransfer;
+          if (!dt) return;
+          var files = [];
+          var items = dt.items;
+          if (items && items.length) {
+            var list = Array.prototype.slice.call(items);
+            for (var di = 0; di < list.length; di++) {
+              var entry = list[di].webkitGetAsEntry && list[di].webkitGetAsEntry();
+              if (entry) await scanFilesRecursively(entry, files, isProductImageFile);
+            }
+          }
+          if (!files.length && dt.files && dt.files.length) {
+            files = Array.prototype.slice.call(dt.files).filter(isProductImageFile);
+          }
+          handleIncomingFiles(files).catch(function () {});
+        });
+        productImageInput.addEventListener("change", function (e) {
+          var fs = e.target.files;
+          if (fs && fs.length) handleIncomingFiles(Array.prototype.slice.call(fs)).catch(function () {});
+          e.target.value = "";
+        });
+      }
+
+      document.addEventListener(
+        "paste",
+        function (e) {
+          var dt = e.clipboardData;
+          var raw = collectClipboardImageFiles(dt);
+          var imgs = raw.filter(isProductImageFile);
+          if (!imgs.length) return;
+          if (
+            activeElementIsProductLineTextInput(document.activeElement) &&
+            clipboardHasPlainText(dt)
+          ) {
+            return;
+          }
+          e.preventDefault();
+          handleIncomingFiles(imgs).catch(function () {});
+        },
+        true
+      );
+
+      var sellingPanel = document.querySelector(".selling-panel");
+      function syncSellingPanelHint() {
+        if (!sellingPanel || !sellingTextarea) return;
+        var hasText = sellingTextarea.value.trim().length > 0;
+        if (hasText) {
+          sellingPanel.classList.add("selling-panel--filled");
+        } else {
+          sellingPanel.classList.remove("selling-panel--filled");
+        }
+      }
+
+      function bindSellingPanelHintSync() {
+        if (!sellingPanel || !sellingTextarea) return;
+        ["input", "compositionend", "paste", "cut", "change"].forEach(function (ev) {
+          sellingTextarea.addEventListener(ev, function () {
+            if (ev === "paste") {
+              setTimeout(function () {
+                syncSellingPanelHint();
+                syncCategoryFromEngine();
+              }, 0);
+            } else {
+              syncSellingPanelHint();
+              syncCategoryFromEngine();
+            }
+          });
+        });
+
+        var sellingBriefHint = sellingPanel.querySelector(".selling-panel__hint");
+        if (sellingBriefHint && sellingFileInput) {
+          sellingBriefHint.addEventListener("click", function (e) {
+            e.stopPropagation();
+            sellingFileInput.click();
+          });
+          sellingBriefHint.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              sellingFileInput.click();
+            }
+          });
+        }
+
+        sellingPanel.addEventListener("click", function (e) {
+          if (!sellingTextarea) return;
+          if (sellingBriefHint && (e.target === sellingBriefHint || sellingBriefHint.contains(e.target)))
+            return;
+          sellingTextarea.focus();
+        });
+
+        if (sellingFileInput) {
+          sellingFileInput.addEventListener("change", function (e) {
+            var inp = e.target;
+            var fs = inp.files;
+            if (fs && fs.length) {
+              handleBriefFiles(Array.prototype.slice.call(fs))
+                .catch(function (err) {
+                  console.error("[Brief] handleBriefFiles (file input):", err);
+                })
+                .then(function () {
+                  inp.value = "";
+                });
+            } else {
+              inp.value = "";
+            }
+          });
+        }
+
+        sellingPanel.addEventListener("dragover", function (e) {
+          e.preventDefault();
+        });
+        sellingPanel.addEventListener("drop", async function (e) {
+          var dt = e.dataTransfer;
+          if (!dt) return;
+
+          var collected = [];
+          var items = dt.items;
+          if (items && items.length) {
+            var list = Array.prototype.slice.call(items);
+            for (var di = 0; di < list.length; di++) {
+              var entry = list[di].webkitGetAsEntry && list[di].webkitGetAsEntry();
+              if (entry) await scanFilesRecursively(entry, collected, isBriefFile);
+            }
+          }
+
+          if (!collected.length && dt.files && dt.files.length) {
+            collected = Array.prototype.slice.call(dt.files).filter(isBriefFile);
+          }
+
+          if (collected.length) {
+            e.preventDefault();
+            sellingPanel.removeAttribute("data-drop-file");
+            await handleBriefFiles(collected);
+            return;
+          }
+
+          var files = dt.files;
+          if (files && files.length) {
+            e.preventDefault();
+            var f = files[0];
+            if (isBriefFile(f)) {
+              sellingPanel.removeAttribute("data-drop-file");
+              await handleBriefFiles([f]);
+              return;
+            }
+            var isText =
+              (f.type && f.type.indexOf("text") === 0) ||
+              /\.(txt|md|csv|json|log)$/i.test(f.name);
+            if (isText) {
+              sellingPanel.removeAttribute("data-drop-file");
+              await handleBriefFiles([f]);
+              return;
+            }
+            sellingPanel.setAttribute("data-drop-file", "1");
+            syncSellingPanelHint();
+            return;
+          }
+          setTimeout(syncSellingPanelHint, 0);
+        });
+        syncSellingPanelHint();
+      }
+      bindSellingPanelHintSync();
+      window.refreshSellingPanelHint = syncSellingPanelHint;
+
+      attachThumb(thumbMin, "min");
+      attachThumb(thumbMax, "max");
+      attachRailSeek();
+      updateDurUI();
+
+      if (btnClear && card) {
+        btnClear.addEventListener("click", function () {
+          card.querySelectorAll("select").forEach(function (s) {
+            s.selectedIndex = 0;
+          });
+          card.querySelectorAll('input[type="text"]').forEach(function (el) {
+            if (el.id === "product-image-input") return;
+            el.value = "";
+          });
+          var llmApiKeyInput = document.getElementById("llm-api-key");
+          if (llmApiKeyInput) llmApiKeyInput.value = "";
+          if (categoryInput) categoryInput.value = "";
+          if (sellingFileInput) sellingFileInput.value = "";
+          card.querySelectorAll("textarea").forEach(function (el) {
+            el.value = "";
+          });
+          if (sellingPanel) {
+            sellingPanel.removeAttribute("data-drop-file");
+            sellingPanel.style.minHeight = "";
+          }
+          clearAllProductImages();
+          syncSellingPanelHint();
+          resetDurationRange();
+          syncCategoryFromEngine();
+          autoResizeTextarea(sellingTextarea);
+        });
+      }
+
+      window.processFiles = handleBriefFiles;
+
+      function clearLlmApiKeyOnExit() {
+        var keyEl = document.getElementById("llm-api-key");
+        if (keyEl) keyEl.value = "";
+      }
+      window.addEventListener("pagehide", clearLlmApiKeyOnExit);
+      window.addEventListener("beforeunload", clearLlmApiKeyOnExit);
+
+      syncCategoryFromEngine();
+    })();
+  </script>
+  <script src="_lab_app_inline.js"></script>
+</body>
+</html>

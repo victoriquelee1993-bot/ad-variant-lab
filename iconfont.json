@@ -1,0 +1,23 @@
+{
+  "id": "local-ad-variant-lab",
+  "glyphs": [
+    {
+      "icon_id": "upload",
+      "name": "上传",
+      "font_class": "shangchuan",
+      "unicode": "e635"
+    },
+    {
+      "icon_id": "refresh",
+      "name": "刷新",
+      "font_class": "shuaxin",
+      "unicode": "e651"
+    },
+    {
+      "icon_id": "resource",
+      "name": "资源",
+      "font_class": "a-ziyuan817",
+      "unicode": "e7a8"
+    }
+  ]
+}
