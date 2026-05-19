@@ -2402,7 +2402,7 @@
         if (typeof Tesseract.createWorker !== "function") return null;
         try {
           briefOcrWorker = await briefRaceWithTimeout(
-            Tesseract.createWorker("chi_sim+eng", {
+            Tesseract.createWorker("chi_sim+eng", 1, {
               logger: function () {},
             }),
             initMs,
@@ -2416,7 +2416,7 @@
           );
           try {
             briefOcrWorker = await briefRaceWithTimeout(
-              Tesseract.createWorker("chi_sim+eng", {
+              Tesseract.createWorker("chi_sim+eng", 1, {
                 logger: function () {},
               }),
               initMs,
