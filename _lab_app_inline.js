@@ -848,9 +848,9 @@
       return /style\s*c\b/i.test(nm);
     }
 
-    /** Style C：单镜不得超过 2s，违规则抛错要求模型重写 */
+    /** Style C：单镜不得超过 2.5s，违规则抛错要求模型重写 */
     function assertStyleCShotDurationLimit(shots, phase) {
-      var maxSec = 2;
+      var maxSec = 2.5;
       var bad = [];
       var si;
       for (si = 0; si < shots.length; si++) {
@@ -927,7 +927,7 @@
         rawSum < lo - 0.02 ? lo : rawSum > hi + 0.02 ? hi : rawSum;
 
       var tot = 0;
-      var maxPerShot = styleC ? 2 : Infinity;
+      var maxPerShot = styleC ? 2.5 : Infinity;
       for (i = 0; i < shots.length; i++) {
         var d = parseFloat(shots[i].duration) || 0;
         var scaled = roundDurD(d * scale);
@@ -1123,7 +1123,7 @@
 
       var styleCGridSplitBlock = "";
       var styleCShotCountLine =
-        "- 对于 Style C（极速快剪）：绝对禁止长镜头！单镜绝对不准超过 2 秒！必须依靠高频剪辑（0.3-1.5s）。为了填满 " +
+        "- 对于 Style C（极速快剪）：绝对禁止长镜头！单镜绝对不准超过 2.5 秒！必须依靠高频剪辑（0.3-2.5s）。为了填满 " +
         targetMin +
         "-" +
         targetMax +
@@ -1133,6 +1133,21 @@
         maxShotsFast +
         " 个镜头！\n";
 
+      if (styleCfg.id === "C") {
+        styleCGridSplitBlock =
+          "\n【Style C · 时长自适应宫格快闪阵列 (Split-screen Grid) 必读】：\n" +
+          "大模型存在输出 JSON 长度惰性，为了在不增加 JSON 对象总数的情况下填满 " +
+          targetMin +
+          "-" +
+          targetMax +
+          "s 的时长并保持极高剪辑密度，**你必须调用「宫格分屏」来吸收冗余时长！**\n" +
+          "请根据目标时长在 visual 描述中自动采用以下阵列（镜头 duration 仍可设置为 1.5-2.5s，但视觉密度极大）：\n" +
+          "- 较短时长 (15-20s)：必须在脚本高潮处加入 1 镜【4 宫格】或【9 宫格】的同屏快闪。\n" +
+          "- 中等时长 (20-30s)：必须包含至少 1 镜【16 宫格】的高频闪烁阵列。\n" +
+          "- 较长时长 (>30s)：绝对核心！必须调用【25 宫格】进行同形异色的 Match Cut 极速闪烁！如果时长依然填不满，请在相邻镜头继续叠加【4 宫格】或【9 宫格】的微距切片组合。\n" +
+          "注意：把上述宫格描述写在单镜的 `visual` 字段里（例如：'画面分裂为16宫格阵列，各格以0.2秒频率快速切换不同材质细节'），用视觉密度换取物理时长，绝不允许使用单镜匀速慢动来拖延时间！\n";
+      }
+
       if (styleCfg.id === "C" && targetMax > 30) {
         var minShotsGrid = Math.max(8, Math.ceil(targetMin / 2.5));
         var maxShotsGrid = Math.max(minShotsGrid, Math.ceil(targetMax / 1.2));
@@ -1141,20 +1156,13 @@
           targetMin +
           "-" +
           targetMax +
-          "s（>30s 长片）。单镜严禁超过 2s！**必须**用「分屏阵列（Grid Split-screen）」压缩 shots 条目：建议约 " +
+          "s（>30s 长片）。单镜严禁超过 2.5s！**必须**用「分屏阵列（Grid Split-screen）」压缩 shots 条目：建议约 " +
           minShotsGrid +
           "-" +
           maxShotsGrid +
           " 镜（含宫格分屏镜），勿无脑堆砌 " +
           minShotsFast +
           "+ 镜导致 JSON 过长被截断。\n";
-        styleCGridSplitBlock =
-          "\n【Style C · 长片必用分屏阵列 Grid Split-screen（目标>30s）】：\n" +
-          "为防止 Token 溢出、脚本 JSON 生成中断，**必须**在多处使用分屏阵列，用更少 shots 覆盖更长总时长：\n" +
-          "- 示例：一镜 visual 写明「四分屏同屏并列」，四格各呈不同角度/配色/肌理，物理 duration 仅 1.0-1.5s，但视觉信息量相当于 4 个独立镜头。\n" +
-          "- 亦可使用九宫格/十六宫格快闪阵列 + Match Cut；优先 0.8-1.5s/镜，严禁单镜>2s。\n" +
-          "- 靠分屏「换密度」而非堆 JSON 对象总数；shots 数组长度应明显低于纯切镜方案。\n" +
-          "- 每格须在 visual 内写清画面；matching_reason 可说明「本镜以四宫格承载多素材，故 duration 短而信息密度高」。\n";
       }
 
       const systemPrompt =
@@ -1179,14 +1187,14 @@ ${styleCShotCountLine}【高级提密度手法：宫格分屏（Split-screen Gri
 请利用这种分屏手法，合情合理地完成上述要求的镜头数量！
 ${styleCGridSplitBlock}
 
-【物理算数死命令】：所有镜头的 duration 累加总和必须严格落在 ${targetMin}-${targetMax} 秒之间！绝对禁止只写几个长镜头糊弄了事！单镜 duration 严禁超过 4 秒（Style C必须在 0.5-1.5 秒内）！
+【物理算数死命令】：所有镜头的 duration 累加总和必须严格落在 ${targetMin}-${targetMax} 秒之间！绝对禁止只写几个长镜头糊弄了事！单镜 duration 严禁超过 4 秒（Style C必须在 0.5-2.5 秒内）！
 【技术铁律·解析兼容】顶层含字符串 director_treatment、visualDNA（必填：顶级英文 DALL-E 生图 Prompt，精确描述产品外观材质与型号细节）与数组 shots；每镜须含 source_image_id（整数）、matching_reason（景别匹配理由，一句中文）、duration（代表绝对物理秒数，数字格式如1.5、2.0）、visual、motion。严禁输出 duration_weight！
 visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
 
       var userTextBlock =
         "【投放平台】：" +
         String(p.platform != null ? p.platform : "未指定") +
-        "（你必须绝对遵守该平台用户的观看习惯！短视频平台前3秒必须极速反转，大屏/商详平台需要极致细节！）\n" +
+        "（你必须绝对遵守该平台用户的观看习惯！短视频平台前3秒必须极速反转，大屏/商详平台需要极致细节！）【最高优先级规则】：如果投放平台是 亚马逊 (Amazon) 或 短视频平台，绝对禁止超过 2 秒的环境铺垫（Establishing Shot）！第一镜必须直接特写展示产品核心，所有慢节奏的起幅必须被强制切除！\n" +
         "【总时长目标】：" +
         targetMin +
         "-" +
@@ -1425,12 +1433,6 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
 
     window.__LAST_STORYBOARD_DATA__ = styles;
 
-    var visualBoardHost = document.getElementById("visualBoardContainer");
-    if (visualBoardHost) {
-      visualBoardHost.style.display = "none";
-      visualBoardHost.innerHTML = "";
-    }
-
     if (modsTarget) {
       modsTarget.innerHTML = "";
       modsTarget.removeAttribute("disabled");
@@ -1535,7 +1537,44 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
         totalSec.toFixed(1) +
         "s " +
         (isWarn ? "(目标 " + targetMin + "-" + targetMax + "s)" : "✅ 达标") +
-        "</div></div>";
+        "</div>";
+
+      var hasVisualUrls = shots.some(function (sh) {
+        return sh && sh.visual_image_url;
+      });
+      if (hasVisualUrls) {
+        var ratioElRestore = document.getElementById("ratio-select");
+        var ratioStrRestore = ratioElRestore ? String(ratioElRestore.value || "") : "";
+        var cssRatioRestore = "16 / 9";
+        var mRestore = ratioStrRestore.match(/(\d+):(\d+)/);
+        if (mRestore) cssRatioRestore = mRestore[1] + " / " + mRestore[2];
+
+        html +=
+          '<div class="style-visual-board" style="margin-top:24px;">' +
+          '<h3 style="margin:0 0 16px;padding-bottom:8px;border-bottom:2px solid var(--blue);font-size:1.2rem;">🖼️ 视觉分镜图</h3>' +
+          '<div class="style-visual-board-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:24px;direction:ltr;grid-auto-flow:row;">';
+
+        shots.forEach(function (shot, vi) {
+          var visUrl = shot && shot.visual_image_url ? String(shot.visual_image_url) : "";
+          if (!visUrl) return;
+          html +=
+            '<div class="visual-shot-card" style="border:1px solid var(--border-color);border-radius:12px;overflow:hidden;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,0.04);">' +
+            '<div style="width:100%;aspect-ratio:' +
+            cssRatioRestore +
+            ';background:#f5f5f7;overflow:hidden;border-bottom:1px solid var(--border-color);">' +
+            '<img src="' +
+            escapeHtml(visUrl) +
+            '" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy" />' +
+            "</div>" +
+            '<div style="padding:14px;font-size:0.85rem;font-weight:600;">SHOT ' +
+            (vi + 1) +
+            "</div></div>";
+        });
+
+        html += "</div></div>";
+      }
+
+      html += "</div>";
       panel.innerHTML = html;
       panels.appendChild(panel);
     });
@@ -1754,12 +1793,12 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
   function getStyleMoodSuffix(style, sIdx) {
     var name = String((style && style.styleName) || "");
     if (/style\s*a\b/i.test(name) || (sIdx === 0 && !/style\s*[bc]\b/i.test(name))) {
-      return "Industrial studio, sharp focus, technical lighting";
+      return "Sterile clean laboratory, macro lens, pure white and grey background, hyper-realistic, NO clutter.";
     }
     if (/style\s*b\b/i.test(name) || sIdx === 1) {
-      return "Natural warm lighting, high-end lifestyle photography, depth of field";
+      return "Cozy living room, lifestyle photography, warm afternoon sunlight, depth of field, blurred background.";
     }
-    return "";
+    return "Dynamic angle, motion blur, cyberpunk or high contrast neon lighting, dramatic.";
   }
 
   function buildVisualDrawPrompt(shot, style, productName, sIdx) {
@@ -1812,6 +1851,7 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
       .then(function (genData) {
         if (genData && genData.data && genData.data[0] && genData.data[0].url) {
           img.src = genData.data[0].url;
+          if (opts.shot) opts.shot.visual_image_url = genData.data[0].url;
           img.onload = function () {
             loading.style.display = "none";
             img.style.opacity = "1";
@@ -1913,8 +1953,34 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
 
       var data = window.__LAST_STORYBOARD_DATA__;
       if (!data || !data.length) return alert("请先点击 Craft Storyboard 生成分镜脚本");
-      var container = document.getElementById("visualBoardContainer");
-      if (!container) return;
+
+      var activeTabBtn = document.querySelector(".tab-btn.is-active");
+      var sIdx = activeTabBtn ? parseInt(String(activeTabBtn.dataset.tab || "0"), 10) : 0;
+      if (isNaN(sIdx) || sIdx < 0) sIdx = 0;
+
+      var style = data[sIdx];
+      if (!style || !Array.isArray(style.shots) || !style.shots.length) {
+        return alert("当前 Tab 无有效分镜，请先生成分镜脚本");
+      }
+
+      var panel = document.getElementById("panel-" + sIdx);
+      if (!panel) return;
+
+      var container = panel.querySelector(".style-visual-board");
+      if (!container) {
+        container = document.createElement("div");
+        container.className = "style-visual-board";
+        container.style.cssText = "margin-top: 24px;";
+        panel.appendChild(container);
+      } else {
+        container.innerHTML = "";
+      }
+
+      var legacyVisualHost = document.getElementById("visualBoardContainer");
+      if (legacyVisualHost) {
+        legacyVisualHost.style.display = "none";
+        legacyVisualHost.innerHTML = "";
+      }
 
       // 1. 获取用户选择的画幅比例 (如 9:16 Vertical)
       var ratioElBoard = document.getElementById("ratio-select");
@@ -1927,25 +1993,19 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
       var productEl = document.getElementById("product-input");
       var productName = (productEl && String(productEl.value || "").trim()) || "luxury product";
 
-      container.innerHTML = "";
-      container.style.display = "block";
-
       var visualRenderTasks = [];
 
-      data.forEach(function (style, sIdx) {
-        if (!style || !Array.isArray(style.shots)) return;
+      var header = document.createElement("h3");
+      header.textContent = style.styleName || "Style " + (sIdx + 1);
+      header.style.cssText = "margin: 0 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--blue); font-size: 1.2rem;";
+      container.appendChild(header);
 
-        var header = document.createElement("h3");
-        header.textContent = style.styleName || "Style " + (sIdx + 1);
-        header.style.cssText = "margin: 40px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--blue); font-size: 1.2rem;";
-        container.appendChild(header);
+      var grid = document.createElement("div");
+      grid.className = "style-visual-board-grid";
+      grid.style.cssText =
+        "display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 24px; direction: ltr; grid-auto-flow: row; justify-items: stretch; align-items: start;";
 
-        // 2. 从左到右、自上而下：显式 LTR + row flow；单卡画幅比由 #ratio-select → cssRatio
-        var grid = document.createElement("div");
-        grid.style.cssText =
-          "display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 24px; direction: ltr; grid-auto-flow: row; justify-items: stretch; align-items: start;";
-
-        style.shots.forEach(function (shot, i) {
+      style.shots.forEach(function (shot, i) {
           var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx);
 
           var card = document.createElement("div");
@@ -1982,6 +2042,7 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
             loading: loading,
             img: img,
             redrawBtn: redrawBtn,
+            shot: shot,
             apiKey: openaiKeyForImages,
             imageModel: IMAGE_GENERATION_MODEL,
             drawPrompt: drawPrompt,
@@ -2026,14 +2087,12 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
 
           card.appendChild(content);
           grid.appendChild(card);
-        });
-
-        container.appendChild(grid);
       });
+
+      container.appendChild(grid);
 
       runVisualRenderConcurrencyPool(visualRenderTasks, 3);
 
-      // 5. 渲染完毕后，页面平滑滚动至视觉分镜区
       container.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }
