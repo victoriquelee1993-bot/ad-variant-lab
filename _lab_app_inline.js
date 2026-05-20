@@ -483,9 +483,15 @@
         window.__MASTER_VISUAL_PROMPT__ = params.product;
       }
 
-      const storyboardData = await generateThreeStyleStoryboards(params, apiKey);
-      renderStoryboardDashboard(storyboardData);
-      setStoryEngineProgress("✅ 三套分镜已就绪（时长与视觉绑定已物理校准）", 100);
+      initDashboardSkeleton();
+      setLabBusy(false);
+
+      await generateThreeStyleStoryboards(params, apiKey, function (idx, styleObj) {
+        renderSingleStylePanel(idx, styleObj);
+      });
+
+      finalizeProgressiveStoryboardDashboard();
+      setStoryEngineProgress("✅ 三套分镜已全部就绪", 100);
       setTimeout(function () {
         clearStoryEngineProgress();
       }, 2200);
@@ -622,7 +628,7 @@
     return null;
   }
 
-  async function generateThreeStyleStoryboards(p, key) {
+  async function generateThreeStyleStoryboards(p, key, onStyleReady) {
     setStoryEngineProgress("分镜引擎启动：将依次处理 Style A / B / C…", 1);
 
     const files = typeof window.__getStoryboardImageFiles === "function" ? window.__getStoryboardImageFiles() : [];
@@ -707,21 +713,21 @@
     const stylesToCraft = [
       {
         id: "A",
-        name: "Style A (Precision 专业美学/极致克制)",
+        name: "Style A (核心属性揭秘 / Core Attribute)",
         focus:
-          "【逻辑：精密验证】全片必须在极简、高冷的“真空”工作坊内，展现“极端完美主义者”与产品的物理角力。必须遵循：1.微观动作验证（防静电指套、镊子）；2.机位仅限极缓 Dolly In/Out 观察材质物理结构；3.【硬性结尾】：最后一镜必须拉开展现成品全貌并在 Rim Light 下定格。严禁全景环境，严禁烟火气。",
+          "【动态推演：材质与功能本源】请根据当前产品类目自行推演最适配的视觉风格！严禁无脑套用3C/美妆模板。如果产品是工业机械，请展现力量与工程结构；如果是宠物食品，请展现原切质感与食欲。重点：剥离冗杂环境，用最极致的光影和机位（如微距/透视）放大产品最核心的物理或功能特征。",
       },
       {
         id: "B",
-        name: "Style B (Lifestyle 情感叙事/真实生活)",
+        name: "Style B (场景与情绪共生 / Context & Emotion)",
         focus:
-          "【逻辑：身份共生】全片必须彻底移除“工作室”语汇，设定为“生活鉴赏家”。必须遵循「建立-生活-流露」的三幕叙事（严禁用碎镜堆砌，用 5-8 镜拆解）：Act 1 (环境建立) 为 [usage_scenarios] 建立阶层空间；Act 2 (生活动作) 人物充满仪式感的非功利动作；Act 3 (产品整合) 借动作自然流露产品。必须利用光影切面分割空间，杜绝死平光。",
+          "【动态推演：真实使用语境】必须基于 [usage_scenarios] 推演最符合该品类目标受众的生活/使用场景。禁止强行制造高级感。如果是户外装备，必须有泥土与风雨的粗粝感；如果是母婴用品，必须有温和柔软的交互。通过一连串自然的动作流，让产品与使用者产生情绪共鸣。",
       },
       {
         id: "C",
-        name: "Style C (Hook-Driven 视觉冲击/极速快剪)",
+        name: "Style C (感官刺激与钩子 / Hook-Driven)",
         focus:
-          "【逻辑：视觉谜题】严禁重复 A 的微距观察。必须利用‘视觉错觉’。核心指令：1.首镜钩子必须是非辨识性肌理或动作触发；2.强制利用 Match Cut（匹配剪辑）进行跨维度跳跃；3.强制使用 Whip Pan（甩镜头）、运动模糊和 Speed Ramp（变速），营造‘暴力美学’奇观，并配合极致 ASMR 音效。",
+          "【动态推演：反常规视觉奇观】彻底打破常规！根据品类特性，设计极具反差感或视觉欺骗性的开场。强制使用 Match Cut（匹配剪辑）、极端视角或夸张的音效放大体验。动作必须快、准、狠，绝不拖泥带水，让观众在第一秒就被按在屏幕前。",
       },
     ];
 
@@ -1116,29 +1122,45 @@
         8 + (typeof styleIndex === "number" ? styleIndex : 0) * 28
       );
 
+      var platformStr = String(p.platform || "");
+      var isShortVideo = /TikTok|Reels|Shorts|小红书|Instagram/.test(platformStr);
+      var avgShotLen = isShortVideo ? 1.5 : 3.5;
+      var minShots = Math.floor(targetMin / avgShotLen);
+      var maxShots = Math.ceil(targetMax / (isShortVideo ? 0.8 : 2.5));
+      if (minShots < 5) minShots = 5;
+
       var dynamicPacingBlock =
-        "【最高级核心：平台节奏与 4/9/16/25 动态镜头调度】\n" +
-        "1. 节奏由平台决定：如 亚马逊/TikTok 必须极速快剪（禁止拖沓铺垫，单镜0.5-2s）；如 Brand TVC 允许 3-5s 复合长镜头。\n" +
-        "2. 镜头数绝不定死：请根据目标时长 " +
+        "【最高级别数学死命令：平台与时长硬挂钩】\n" +
+        "当前平台为【" +
+        (platformStr || "未指定") +
+        "】，目标总时长严格限制在【" +
         targetMin +
         "-" +
         targetMax +
-        "s 的区间自动波动，自己计算需要多庞大的信息量！\n" +
-        "3. 【破局利器：4/9/16/25 宫格阵列】：为了在不拉长 JSON 的前提下满足你计算出的庞大镜头需求，你必须智能调用分屏宫格！\n" +
-        "   - 若需要一定的信息密度，请调用【4宫格】或【9宫格】同屏快闪。\n" +
-        "   - 若时长极长（>45s）且平台需高频快剪，必须调用【16宫格】甚至【25宫格】！如果 25 宫格仍填不满时间，可在相邻镜头继续叠加 4 或 9 宫格！\n" +
-        "   - Style A/B 可用优雅的 4/9 宫格对比细节或群像；Style C 须用 16/25 宫格极速同形异色闪烁。\n" +
-        "注意：把宫格阵列的描述写在单镜 visual 里，并给该阵列分配长 duration（如 6-12s），用内部的微距切割与高频闪烁来吸收物理时长，绝不允许用呆板的单镜头拖时间！\n";
+        "s】之间。\n" +
+        "🔥【全平台通用：黄金 3 秒法则】：无论任何平台，视频的前 3 秒（即第 1 镜或前 2 镜）必须是极具视觉冲击力的 Hook！严禁缓慢的环境铺垫！\n" +
+        (isShortVideo
+          ? "👉 【短视频极速法则】：单镜绝对禁止超过 2.5 秒！必须输出【至少 " +
+            minShots +
+            " 个，最多 " +
+            maxShots +
+            " 个】高频切换镜头！"
+          : "👉 【传统/电商法则】：你需要输出【" +
+            minShots +
+            " 到 " +
+            maxShots +
+            " 个】镜头。允许出现最高 6s 的长镜头，但必须包含复杂的空间调度（如 Arc Orbit 结合 Dolly In），绝不允许画面死板！") +
+        "\n如果镜头数填不满总时长，强制调用 4/9/16/25 宫格阵列，利用分屏高频闪烁吸收时长。\n";
 
       const systemPrompt =
         `你是一位身价千万的商业广告导演。你现在的任务是生成一份「初稿即过稿」的专业脚本。
 
 【全行业过稿死命令】：
-1. 空间隔离：Style A 严禁出现环境，Style B 严禁出现生产工具，Style C 严禁出现匀速慢动。
-2. 叙事闭环（Style A 特有）：必须在结尾交代产品的最终形态，严禁只展示过程而无结论。
-3. 叙事逻辑（Style B 特有）：禁止碎片化堆砌。必须先卖「氛围（Establish）」，再卖「人物（Emotion）」，最后带出「产品（Integration）」。
-4. 视觉锚点：每一镜必须包含明确的镜头运动矢量（如 Dolly In, Arc Orbit），且 Shot N 的结束点必须与 Shot N+1 的开始点物理对齐，严禁空间瞬移。
-5. 材质 DNA：根据产品品类，强制在每一镜注入 Lighting Rig 指令（3C 用 Scan Light，美妆用 Tyndall，家居用自然窗光）。
+1. 风格差异化：三套方案视觉语言、场景与节奏必须差异巨大；严禁三套写成同一口吻。各套须严格执行 user 消息中的「本套风格动态推演要求」。
+2. 矢量运镜：每一镜须含明确镜头运动术语（Dolly In, Arc Orbit, Rack Focus 等），禁止含糊的「镜头动一下」。
+3. 灯光系统：每镜须指定 Lighting Rig，并按**当前产品品类**匹配（勿无脑套用 3C/美妆模板）。
+4. 剪接锚点：Shot N 结束态与 Shot N+1 起幅须可剪接对齐，严禁空间瞬移。
+5. 叙事闭环：结尾须让观众读懂产品价值或最终形态，禁止只有过程无结论。
 
 【输出格式】：只输出合法 JSON，visual 描述必须是充满镜头感的纯中文，严禁含糊其辞。第 1 镜须直接呈现产品本体或可读的局部核心（禁止纯人物/纯风景无产品前摇）。
 ${buildUniversalBindingPromptBlock(catalogSlotCount)}
@@ -1149,28 +1171,31 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
 
       var userTextBlock =
         "【投放平台】：" +
-        String(p.platform != null ? p.platform : "未指定") +
-        "（你必须绝对遵守该平台用户的观看习惯！短视频平台前3秒必须极速反转，大屏/商详平台需要极致细节！）【最高优先级规则】：如果投放平台是 亚马逊 (Amazon) 或 短视频平台，绝对禁止超过 2 秒的环境铺垫（Establishing Shot）！第一镜必须直接特写展示产品核心，所有慢节奏的起幅必须被强制切除！\n" +
+        (platformStr || "未指定") +
+        "\n" +
         "【总时长目标】：" +
         targetMin +
         "-" +
         targetMax +
         "s\n" +
-        "【产品与类目】：" +
-        String(p.product != null ? p.product : "") +
+        "【产品定位与核心卖点】：\n" +
+        "产品：" +
+        String(p.product != null ? p.product : "未填写") +
         " (" +
         (p.category && String(p.category).trim() ? String(p.category).trim() : "未分类") +
         ")\n" +
-        "【产品与简报】：\n" +
-        String(p.brief != null ? p.brief : "") +
-        "\n【场景库】：" +
+        "简报：" +
+        String(p.brief != null ? p.brief : "无") +
+        "\n" +
+        "【场景库】：" +
         usageScenariosForPrompt +
-        "\n\n【本套风格强制设定：" +
+        "\n\n" +
+        "⚡【单点多维拆解法则（防注水死命令）】：如果简报提供的卖点很少，绝对禁止拉长单镜时长来凑数！你必须把一个单薄的卖点拆解为 4 个视觉维度分镜呈现：1.物理表象(特写材质) 2.动作触发(如何操作/交互) 3.痛点对比(没有它的惨状) 4.情绪收益(使用后的神态/氛围)。必须用高密度的多维镜头填满时长！\n\n" +
+        "【本套风格动态推演要求：" +
         styleCfg.name +
         "】\n" +
         styleCfg.focus +
-        "\n\n指令：请仔细观察提供的产品图，结合卖点和平台特性设计分镜。强制要求：1. 严格遵守风格设定（如 Style A 绝不能有人物，必须是极致微距物理材质）。2. 必须在 JSON 的 `visualDNA` 字段输出一段【顶级英文 DALL-E 生图 Prompt】，准确描述图中的产品细节（如：Patek Philippe 6119R, rose gold case, Clous de Paris guilloché bezel），确保后续生图产品高度还原！3. 每镜 source_image_id 必须与画面语义和素材目录一致。\n\n" +
-        "【防同质化死命令】三套都必须出现「人+场景+产品」，但角色完全不同：Style A=专家/驾驭者的克制局部与微距物理；Style B=生活主角与 [usage_scenarios] 真实烟火气，一镜动作流；Style C=视觉触发器+夸张动作驱动错觉与 Match Cut。禁止三套写成同一种人设或同一种运镜口吻。\n" +
+        "\n\n指令：请仔细观察提供的产品图，结合卖点、品类和平台特性设计分镜。强制要求：1. 严格遵守动态推演的风格设定。2. 在 `visualDNA` 中输出一段【顶级英文 DALL-E 生图 Prompt】。3. 每镜 source_image_id 必须与画面语义和素材目录一致。\n" +
         gridHint;
 
       var userContent = [{ type: "text", text: userTextBlock }];
@@ -1178,34 +1203,74 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
         userContent.push({ type: "image_url", image_url: { url: b64, detail: "high" } });
       });
 
-      /** 分镜脚本：GPT-4o Vision + Chat Completions（网络层见 llmApiFetch；导演 prompt 未改） */
-      const res = await llmApiFetch("chat/completions", {
-        label: styleCfg.name + " 分镜",
-        apiKey: key,
-        body: JSON.stringify({
-          model: window.getTextModel(),
-          max_tokens: 8192,
-          temperature: 0.1,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userContent },
-          ],
-          response_format: { type: "json_object" },
-        }),
-      });
+      var lastError = null;
+      var styleObj = null;
+      var originalContent = "";
 
-      const data = await res.json();
-      const originalContent = String(data?.choices?.[0]?.message?.content || "");
-      if (!originalContent.trim()) throw new Error(styleCfg.name + " 响应为空");
+      for (var attempt = 1; attempt <= 2; attempt++) {
+        try {
+          if (attempt > 1) {
+            setStoryEngineProgress(
+              styleCfg.name + " 镜头数不达标，正在强制 AI 重写 (尝试 " + attempt + "/2)...",
+              10 + attempt * 20
+            );
+          }
+
+          const res = await llmApiFetch("chat/completions", {
+            label: styleCfg.name + " 分镜",
+            apiKey: key,
+            body: JSON.stringify({
+              model: window.getTextModel(),
+              max_tokens: 8192,
+              temperature: attempt === 1 ? 0.1 : 0.3,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userContent },
+              ],
+              response_format: { type: "json_object" },
+            }),
+          });
+
+          const data = await res.json();
+          originalContent = String(data?.choices?.[0]?.message?.content || "");
+          if (!originalContent.trim()) throw new Error(styleCfg.name + " 响应为空");
+
+          var jsonSlice = extractOutermostJsonBlock(originalContent);
+          if (!jsonSlice) throw new Error("无效的 JSON 格式（无法提取最外层对象）");
+
+          const parsed = parseJsonWithClosingBraceRepair(jsonSlice);
+          styleObj = parsed.style != null ? parsed.style : parsed;
+
+          if (!styleObj.shots || !Array.isArray(styleObj.shots)) throw new Error("缺少分镜数组");
+
+          var acceptableMin = Math.max(3, Math.floor(minShots * 0.7));
+          if (styleObj.shots.length < acceptableMin) {
+            throw new Error(
+              "AI偷懒拦截：需要至少 " + minShots + " 镜，实际仅输出 " + styleObj.shots.length + " 镜。"
+            );
+          }
+
+          break;
+        } catch (e) {
+          lastError = e;
+          console.warn(
+            "[拦截与重试] " + styleCfg.name + " 第 " + attempt + " 次生成失败:",
+            e && e.message ? e.message : e
+          );
+          if (attempt === 2) {
+            throw new Error(styleCfg.name + " 连续生成失败：" + String(e && e.message ? e.message : e));
+          }
+        }
+      }
+
+      if (!styleObj) {
+        throw new Error(
+          styleCfg.name + " 连续生成失败：" + String(lastError && lastError.message ? lastError.message : lastError)
+        );
+      }
 
       try {
         setStoryEngineProgress(styleCfg.name + " 正在进行视觉闭环校验…", 42 + (typeof styleIndex === "number" ? styleIndex : 0) * 26);
-
-        var jsonSlice = extractOutermostJsonBlock(originalContent);
-        if (!jsonSlice) throw new Error("无效的 JSON 格式（无法提取最外层对象）");
-
-        const parsed = parseJsonWithClosingBraceRepair(jsonSlice);
-        const styleObj = parsed.style != null ? parsed.style : parsed;
 
         styleObj.styleName = styleCfg.name;
         if (styleObj.visualDNA == null) styleObj.visualDNA = "";
@@ -1217,8 +1282,6 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
                 ? "【导演阐述·兜底】人+真实生活场景+产品；动机=烟火气/社交中的自然动作链；视觉核心=窗光情绪与人-物交融（场景锚点须可对应 [usage_scenarios]）。"
                 : "【导演阐述·兜底】人+动感/反差场景+产品；动机=人物动作触发误读与 Match Cut 揭示；视觉核心=极速运镜、运动模糊与 ASMR 节奏。";
         }
-        if (!styleObj.shots || !Array.isArray(styleObj.shots)) throw new Error("缺少分镜数组");
-
         var galleryCountPad = document.querySelectorAll("#product-gallery .gallery-item").length;
         var decoupled = shotsAppearDecoupled(styleObj.shots);
 
@@ -1274,10 +1337,14 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
     }
 
     try {
-      const results = [];
+      const results = [null, null, null];
       for (var si = 0; si < stylesToCraft.length; si++) {
         if (si > 0) await sleep(500);
-        results.push(await craftSingleStyle(stylesToCraft[si], si));
+        const singleStyleObj = await craftSingleStyle(stylesToCraft[si], si);
+        results[si] = singleStyleObj;
+        if (typeof onStyleReady === "function") {
+          onStyleReady(si, singleStyleObj);
+        }
       }
       return { styles: results };
     } catch (err) {
@@ -1374,11 +1441,266 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
     });
   }
 
+  var storyboardTabHandlersBound = false;
+
+  function buildStoryboardPanelHtml(style, sIdx) {
+    void sIdx;
+    const rawShots = style.shots || style.content || style.list || style.Shots || [];
+    const shots = Array.isArray(rawShots) ? rawShots : [];
+    var totalSec = 0;
+    shots.forEach(function (sh) {
+      totalSec += parseFloat(sh.duration || 0) || 0;
+    });
+
+    var treatment = style.director_treatment != null ? String(style.director_treatment) : "";
+    var html =
+      '<div class="dna-card" style="margin-bottom:12px; padding:12px; border:1px solid var(--blue); border-radius:8px; background:rgba(0,80,200,0.04);">' +
+      '<div style="font-size:0.7rem; color:var(--blue); font-weight:bold;">DIRECTOR TREATMENT / 导演阐述</div>' +
+      '<div style="font-size:0.85rem; margin-top:6px; white-space:pre-wrap;">' +
+      escapeHtml(treatment || "—") +
+      "</div></div>" +
+      '<div class="dna-card" style="margin-bottom:16px; padding:12px; border:1px dashed var(--blue); border-radius:8px;">' +
+      '<div style="font-size:0.7rem; color:var(--blue); font-weight:bold;">VISUAL DNA / NARRATIVE CONTEXT</div>' +
+      '<div style="font-size:0.85rem; margin-top:4px;">' +
+      escapeHtml(style.visualDNA != null ? style.visualDNA : "—") +
+      "</div></div>" +
+      '<div class="timeline">';
+
+    shots.forEach(function (shot, i) {
+      var durRaw = shot.duration != null ? String(shot.duration).trim() : "";
+      var durPill = durRaw ? escapeHtml(durRaw) : "—";
+      if (durRaw && !/s$/i.test(durRaw)) durPill += "s";
+
+      html +=
+        '<div class="tl-shot" style="margin-bottom:24px;">' +
+        '<div class="tl-shot-head" style="display:flex; justify-content:space-between;">' +
+        '<span class="tl-no">SHOT ' +
+        (i + 1) +
+        "</span>" +
+        '<span class="tl-pill">' +
+        durPill +
+        "</span></div>" +
+        '<div class="tl-visual" style="font-weight:500; margin-top:6px;"><span class="tl-dot"></span>' +
+        escapeHtml(shot.visual || "") +
+        "</div>" +
+        '<div class="tl-meta" style="font-size:0.75rem; background:rgba(0,0,0,0.02); padding:8px; border-radius:6px; margin-top:8px;">' +
+        "<div>🎥 " +
+        escapeHtml(shot.motion || "") +
+        '</div><div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;">' +
+        "<span>📍 Start: " +
+        escapeHtml(shot.start_motion || "") +
+        "</span><span>📍 End: " +
+        escapeHtml(shot.end_motion || "") +
+        "</span></div>" +
+        '<div style="margin-top:6px;">🔗 ' +
+        escapeHtml(shot.transition || "") +
+        "</div>" +
+        '<div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:4px;">' +
+        "<span>💡 " +
+        escapeHtml(shot.lighting || "") +
+        "</span><span>🌊 " +
+        escapeHtml(shot.pacing || "") +
+        "</span></div></div>" +
+        '<div class="tl-audio" style="font-style:italic; color:var(--muted); margin-top:6px;">🔊 ' +
+        escapeHtml(shot.audio || "") +
+        "</div></div>";
+    });
+
+    var minEl = document.getElementById("totalSecMin");
+    var maxEl = document.getElementById("totalSecMax");
+    var targetMin = minEl ? parseInt(String(minEl.value || "0"), 10) : NaN;
+    var targetMax = maxEl ? parseInt(String(maxEl.value || "0"), 10) : NaN;
+    if (isNaN(targetMin)) targetMin = 45;
+    if (isNaN(targetMax)) targetMax = 60;
+    var isWarn = totalSec < targetMin || totalSec > targetMax;
+
+    html +=
+      '<div class="total-dur" style="color:' +
+      (isWarn ? "red" : "var(--blue)") +
+      '; font-weight:bold; border-top:1px solid #eee; padding-top:12px;">⏱️ 脚本总时长估算：' +
+      totalSec.toFixed(1) +
+      "s " +
+      (isWarn ? "(目标 " + targetMin + "-" + targetMax + "s)" : "✅ 达标") +
+      "</div>";
+
+    var hasVisualUrls = shots.some(function (sh) {
+      return sh && sh.visual_image_url;
+    });
+    if (hasVisualUrls) {
+      var ratioElRestore = document.getElementById("ratio-select");
+      var ratioStrRestore = ratioElRestore ? String(ratioElRestore.value || "") : "";
+      var cssRatioRestore = "16 / 9";
+      var mRestore = ratioStrRestore.match(/(\d+):(\d+)/);
+      if (mRestore) cssRatioRestore = mRestore[1] + " / " + mRestore[2];
+
+      html +=
+        '<div class="style-visual-board" style="margin-top:24px;">' +
+        '<h3 style="margin:0 0 16px;padding-bottom:8px;border-bottom:2px solid var(--blue);font-size:1.2rem;">🖼️ 视觉分镜图</h3>' +
+        '<div class="style-visual-board-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:24px;direction:ltr;grid-auto-flow:row;">';
+
+      shots.forEach(function (shot, vi) {
+        var visUrl = shot && shot.visual_image_url ? String(shot.visual_image_url) : "";
+        if (!visUrl) return;
+        html +=
+          '<div class="visual-shot-card" style="border:1px solid var(--border-color);border-radius:12px;overflow:hidden;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,0.04);">' +
+          '<div style="width:100%;aspect-ratio:' +
+          cssRatioRestore +
+          ';background:#f5f5f7;overflow:hidden;border-bottom:1px solid var(--border-color);">' +
+          '<img src="' +
+          escapeHtml(visUrl) +
+          '" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy" />' +
+          "</div>" +
+          '<div style="padding:14px;font-size:0.85rem;font-weight:600;">SHOT ' +
+          (vi + 1) +
+          "</div></div>";
+      });
+
+      html += "</div></div>";
+    }
+
+    html += "</div>";
+    return html;
+  }
+
+  function syncStoryboardModsDropdown(styles) {
+    var modsTarget = document.getElementById("storyModsTarget");
+    if (!modsTarget || !Array.isArray(styles)) return;
+    modsTarget.innerHTML = "";
+    var hasAny = false;
+    styles.forEach(function (style, idx) {
+      if (!style) return;
+      hasAny = true;
+      var opt = document.createElement("option");
+      opt.value = String(idx);
+      opt.textContent = style.styleName || "Style " + (idx + 1);
+      modsTarget.appendChild(opt);
+    });
+    if (hasAny) {
+      modsTarget.removeAttribute("disabled");
+      if (!modsTarget.value) modsTarget.value = "0";
+    }
+  }
+
+  function bindStoryboardTabHandlers() {
+    if (storyboardTabHandlersBound) return;
+    storyboardTabHandlersBound = true;
+
+    var tabBtns = document.querySelectorAll(".tab-btn");
+    tabBtns.forEach(function (btn) {
+      btn.onclick = function () {
+        document.querySelectorAll(".tab-btn, .tab-panel").forEach(function (el) {
+          el.classList.remove("is-active");
+        });
+        this.classList.add("is-active");
+        var pid = this.dataset.tab;
+        var pnl = pid != null ? document.getElementById("panel-" + pid) : null;
+        if (pnl) pnl.classList.add("is-active");
+        document.querySelectorAll(".tab-btn").forEach(function (b) {
+          b.setAttribute("aria-selected", b === this ? "true" : "false");
+        }, this);
+        var modsTargetSync = document.getElementById("storyModsTarget");
+        if (modsTargetSync && pid != null && pid !== "") modsTargetSync.value = String(pid);
+      };
+    });
+
+    var modsTarget = document.getElementById("storyModsTarget");
+    if (modsTarget) {
+      modsTarget.onchange = function () {
+        var tid = String(this.value || "");
+        var tabBtn = document.querySelector('.tab-btn[data-tab="' + tid + '"]');
+        if (tabBtn && typeof tabBtn.click === "function") tabBtn.click();
+      };
+    }
+  }
+
+  /** 渐进式渲染：点击生成时立即展示三 Tab 骨架（仅初始化一次，后续只注入单片） */
+  function initDashboardSkeleton() {
+    var dashboard = document.getElementById("storyDashboard");
+    var panels = document.getElementById("tabPanels");
+    var tabBtns = document.querySelectorAll(".tab-btn");
+    var modsTarget = document.getElementById("storyModsTarget");
+    if (!dashboard || !panels) return;
+
+    if (!document.getElementById("lab-visual-dalle-pulse")) {
+      var skPulse = document.createElement("style");
+      skPulse.id = "lab-visual-dalle-pulse";
+      skPulse.textContent = "@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.45}}";
+      document.head.appendChild(skPulse);
+    }
+
+    window.__LAST_STORYBOARD_DATA__ = [null, null, null];
+
+    if (modsTarget) {
+      modsTarget.innerHTML = "";
+      modsTarget.setAttribute("disabled", "true");
+    }
+
+    dashboard.classList.add("is-visible");
+    dashboard.setAttribute("aria-hidden", "false");
+    panels.innerHTML = "";
+
+    tabBtns.forEach(function (btn, idx) {
+      btn.style.display = "inline-block";
+      btn.innerHTML =
+        '<span style="animation:pulse 1.5s infinite;opacity:0.6;">⏳ Style ' +
+        (idx + 1) +
+        " 生成中...</span>";
+      btn.classList.remove("is-active");
+      btn.setAttribute("aria-selected", "false");
+
+      var panel = document.createElement("div");
+      panel.className = "tab-panel";
+      panel.id = "panel-" + idx;
+      panel.innerHTML =
+        '<div style="padding:40px;text-align:center;color:var(--muted);">' +
+        '<span style="animation:pulse 1.5s infinite;">正在推演第 ' +
+        (idx + 1) +
+        " 套分镜，请稍候...</span></div>";
+      panels.appendChild(panel);
+    });
+
+    if (tabBtns[0]) {
+      tabBtns[0].classList.add("is-active");
+      tabBtns[0].setAttribute("aria-selected", "true");
+    }
+    var firstPanel = document.getElementById("panel-0");
+    if (firstPanel) firstPanel.classList.add("is-active");
+
+    dashboard.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  /** 渐进式渲染：仅替换 panel-{sIdx} 内容，不清空 panels 容器 */
+  function renderSingleStylePanel(sIdx, style) {
+    if (!style) return;
+
+    var tabBtn = document.querySelector('.tab-btn[data-tab="' + sIdx + '"]');
+    var panel = document.getElementById("panel-" + sIdx);
+    if (!panel) return;
+
+    var slots = window.__LAST_STORYBOARD_DATA__;
+    if (!Array.isArray(slots)) slots = [null, null, null];
+    slots[sIdx] = style;
+    window.__LAST_STORYBOARD_DATA__ = slots;
+
+    if (tabBtn) {
+      tabBtn.textContent = style.styleName || "Style " + (sIdx + 1);
+    }
+
+    syncStoryboardModsDropdown(slots);
+
+    panel.innerHTML = buildStoryboardPanelHtml(style, sIdx);
+    attachGridInteractivity();
+  }
+
+  /** 渐进式渲染：三套就绪后绑定 Tab 切换（宫格悬浮已在单片注入时绑定） */
+  function finalizeProgressiveStoryboardDashboard() {
+    bindStoryboardTabHandlers();
+  }
+
   function renderStoryboardDashboard(data) {
     const dashboard = document.getElementById("storyDashboard");
     const panels = document.getElementById("tabPanels");
     const tabBtns = document.querySelectorAll(".tab-btn");
-    const modsTarget = document.getElementById("storyModsTarget");
     if (!dashboard || !panels) return;
 
     const styles =
@@ -1388,18 +1710,6 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
     }
 
     window.__LAST_STORYBOARD_DATA__ = styles;
-
-    if (modsTarget) {
-      modsTarget.innerHTML = "";
-      modsTarget.removeAttribute("disabled");
-      styles.forEach(function (style, idx) {
-        var opt = document.createElement("option");
-        opt.value = String(idx);
-        opt.textContent = style.styleName || "Style " + (idx + 1);
-        modsTarget.appendChild(opt);
-      });
-      modsTarget.value = "0";
-    }
 
     dashboard.classList.add("is-visible");
     dashboard.setAttribute("aria-hidden", "false");
@@ -1413,125 +1723,11 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
     });
 
     styles.forEach(function (style, sIdx) {
-      const rawShots = style.shots || style.content || style.list || style.Shots || [];
-      const shots = Array.isArray(rawShots) ? rawShots : [];
-      let totalSec = 0;
-      shots.forEach(function (sh) {
-        totalSec += parseFloat(sh.duration || 0) || 0;
-      });
-
-      const panel = document.createElement("div");
+      if (!style) return;
+      var panel = document.createElement("div");
       panel.className = "tab-panel " + (sIdx === 0 ? "is-active" : "");
       panel.id = "panel-" + sIdx;
-
-      var treatment = style.director_treatment != null ? String(style.director_treatment) : "";
-      let html =
-        '<div class="dna-card" style="margin-bottom:12px; padding:12px; border:1px solid var(--blue); border-radius:8px; background:rgba(0,80,200,0.04);">' +
-        '<div style="font-size:0.7rem; color:var(--blue); font-weight:bold;">DIRECTOR TREATMENT / 导演阐述</div>' +
-        '<div style="font-size:0.85rem; margin-top:6px; white-space:pre-wrap;">' +
-        escapeHtml(treatment || "—") +
-        "</div></div>" +
-        '<div class="dna-card" style="margin-bottom:16px; padding:12px; border:1px dashed var(--blue); border-radius:8px;">' +
-        '<div style="font-size:0.7rem; color:var(--blue); font-weight:bold;">VISUAL DNA / NARRATIVE CONTEXT</div>' +
-        '<div style="font-size:0.85rem; margin-top:4px;">' +
-        escapeHtml(style.visualDNA != null ? style.visualDNA : "—") +
-        "</div></div>" +
-        '<div class="timeline">';
-
-      shots.forEach(function (shot, i) {
-        var durRaw = shot.duration != null ? String(shot.duration).trim() : "";
-        var durPill = durRaw ? escapeHtml(durRaw) : "—";
-        if (durRaw && !/s$/i.test(durRaw)) durPill += "s";
-
-        html +=
-          '<div class="tl-shot" style="margin-bottom:24px;">' +
-          '<div class="tl-shot-head" style="display:flex; justify-content:space-between;">' +
-          '<span class="tl-no">SHOT ' +
-          (i + 1) +
-          "</span>" +
-          '<span class="tl-pill">' +
-          durPill +
-          "</span></div>" +
-          '<div class="tl-visual" style="font-weight:500; margin-top:6px;"><span class="tl-dot"></span>' +
-          escapeHtml(shot.visual || "") +
-          "</div>" +
-          '<div class="tl-meta" style="font-size:0.75rem; background:rgba(0,0,0,0.02); padding:8px; border-radius:6px; margin-top:8px;">' +
-          "<div>🎥 " +
-          escapeHtml(shot.motion || "") +
-          '</div><div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;">' +
-          "<span>📍 Start: " +
-          escapeHtml(shot.start_motion || "") +
-          "</span><span>📍 End: " +
-          escapeHtml(shot.end_motion || "") +
-          "</span></div>" +
-          '<div style="margin-top:6px;">🔗 ' +
-          escapeHtml(shot.transition || "") +
-          "</div>" +
-          '<div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:4px;">' +
-          "<span>💡 " +
-          escapeHtml(shot.lighting || "") +
-          "</span><span>🌊 " +
-          escapeHtml(shot.pacing || "") +
-          "</span></div></div>" +
-          '<div class="tl-audio" style="font-style:italic; color:var(--muted); margin-top:6px;">🔊 ' +
-          escapeHtml(shot.audio || "") +
-          "</div></div>";
-      });
-
-      var minEl = document.getElementById("totalSecMin");
-      var maxEl = document.getElementById("totalSecMax");
-      var targetMin = minEl ? parseInt(String(minEl.value || "0"), 10) : NaN;
-      var targetMax = maxEl ? parseInt(String(maxEl.value || "0"), 10) : NaN;
-      if (isNaN(targetMin)) targetMin = 45;
-      if (isNaN(targetMax)) targetMax = 60;
-      var isWarn = totalSec < targetMin || totalSec > targetMax;
-
-      html +=
-        '<div class="total-dur" style="color:' +
-        (isWarn ? "red" : "var(--blue)") +
-        '; font-weight:bold; border-top:1px solid #eee; padding-top:12px;">⏱️ 脚本总时长估算：' +
-        totalSec.toFixed(1) +
-        "s " +
-        (isWarn ? "(目标 " + targetMin + "-" + targetMax + "s)" : "✅ 达标") +
-        "</div>";
-
-      var hasVisualUrls = shots.some(function (sh) {
-        return sh && sh.visual_image_url;
-      });
-      if (hasVisualUrls) {
-        var ratioElRestore = document.getElementById("ratio-select");
-        var ratioStrRestore = ratioElRestore ? String(ratioElRestore.value || "") : "";
-        var cssRatioRestore = "16 / 9";
-        var mRestore = ratioStrRestore.match(/(\d+):(\d+)/);
-        if (mRestore) cssRatioRestore = mRestore[1] + " / " + mRestore[2];
-
-        html +=
-          '<div class="style-visual-board" style="margin-top:24px;">' +
-          '<h3 style="margin:0 0 16px;padding-bottom:8px;border-bottom:2px solid var(--blue);font-size:1.2rem;">🖼️ 视觉分镜图</h3>' +
-          '<div class="style-visual-board-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:24px;direction:ltr;grid-auto-flow:row;">';
-
-        shots.forEach(function (shot, vi) {
-          var visUrl = shot && shot.visual_image_url ? String(shot.visual_image_url) : "";
-          if (!visUrl) return;
-          html +=
-            '<div class="visual-shot-card" style="border:1px solid var(--border-color);border-radius:12px;overflow:hidden;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,0.04);">' +
-            '<div style="width:100%;aspect-ratio:' +
-            cssRatioRestore +
-            ';background:#f5f5f7;overflow:hidden;border-bottom:1px solid var(--border-color);">' +
-            '<img src="' +
-            escapeHtml(visUrl) +
-            '" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy" />' +
-            "</div>" +
-            '<div style="padding:14px;font-size:0.85rem;font-weight:600;">SHOT ' +
-            (vi + 1) +
-            "</div></div>";
-        });
-
-        html += "</div></div>";
-      }
-
-      html += "</div>";
-      panel.innerHTML = html;
+      panel.innerHTML = buildStoryboardPanelHtml(style, sIdx);
       panels.appendChild(panel);
     });
 
@@ -1540,31 +1736,8 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
       btn.setAttribute("aria-selected", idx === 0 && styles[0] ? "true" : "false");
     });
 
-    tabBtns.forEach(function (btn) {
-      btn.onclick = function () {
-        document.querySelectorAll(".tab-btn, .tab-panel").forEach(function (el) {
-          el.classList.remove("is-active");
-        });
-        this.classList.add("is-active");
-        const pid = this.dataset.tab;
-        const pnl = pid != null ? document.getElementById("panel-" + pid) : null;
-        if (pnl) pnl.classList.add("is-active");
-        document.querySelectorAll(".tab-btn").forEach(function (b) {
-          b.setAttribute("aria-selected", b === this ? "true" : "false");
-        }, this);
-        var modsTargetSync = document.getElementById("storyModsTarget");
-        if (modsTargetSync && pid != null && pid !== "") modsTargetSync.value = String(pid);
-      };
-    });
-
-    if (modsTarget) {
-      modsTarget.onchange = function () {
-        var tid = String(this.value || "");
-        var tabBtn = document.querySelector('.tab-btn[data-tab="' + tid + '"]');
-        if (tabBtn && typeof tabBtn.click === "function") tabBtn.click();
-      };
-    }
-
+    syncStoryboardModsDropdown(styles);
+    bindStoryboardTabHandlers();
     attachGridInteractivity();
   }
 
@@ -1786,6 +1959,17 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
     return parts.join(" ");
   }
 
+  function labSleep(ms) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  function isVisualRateLimitError(err) {
+    var msg = String(err && err.message ? err.message : err || "");
+    return /\b429\b|rate\s*limit|too many requests/i.test(msg);
+  }
+
   function requestVisualShotImage(opts) {
     var loading = opts.loading;
     var img = opts.img;
@@ -1798,21 +1982,35 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
 
     var apiPath = "images/generations";
 
-    return llmApiFetch(apiPath, {
-      label: "DALL-E 生图",
-      apiKey: String(opts.apiKey || "").trim(),
-      body: JSON.stringify({
-        model: opts.imageModel,
-        prompt: opts.drawPrompt,
-        n: 1,
-        size: opts.imageSize,
-        quality: "standard",
-        response_format: "url",
-      }),
-    })
-      .then(function (res) {
-        return res.json();
+    function runImageGenAttempt(retriesLeft) {
+      return llmApiFetch(apiPath, {
+        label: "DALL-E 生图",
+        apiKey: String(opts.apiKey || "").trim(),
+        body: JSON.stringify({
+          model: opts.imageModel,
+          prompt: opts.drawPrompt,
+          n: 1,
+          size: opts.imageSize,
+          quality: "standard",
+          response_format: "url",
+        }),
       })
+        .then(function (res) {
+          return res.json();
+        })
+        .catch(function (err) {
+          if (retriesLeft > 0 && isVisualRateLimitError(err)) {
+            loading.innerHTML =
+              "<span style='font-size:12px;color:#666;'>限流冷却中，2.5s 后重试…</span>";
+            return labSleep(2500).then(function () {
+              return runImageGenAttempt(retriesLeft - 1);
+            });
+          }
+          throw err;
+        });
+    }
+
+    return runImageGenAttempt(1)
       .then(function (genData) {
         if (genData && genData.data && genData.data[0] && genData.data[0].url) {
           img.src = genData.data[0].url;
@@ -1852,36 +2050,37 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
       });
   }
 
-  /** 并发池：最多 maxConcurrency 路同时执行，任务按入队顺序启动 */
+  /** 慢速排队池：严格单线程，且任务间强制间隔 delayMs，防止 DALL-E 429 限流 */
   function runVisualRenderConcurrencyPool(taskFns, maxConcurrency) {
-    var limit = maxConcurrency > 0 ? maxConcurrency : 3;
+    void maxConcurrency;
     var fns = Array.isArray(taskFns) ? taskFns : [];
     if (!fns.length) return Promise.resolve();
 
+    var delayMs = 10000;
+
     return new Promise(function (resolve) {
       var idx = 0;
-      var active = 0;
-      var settled = 0;
 
       function pump() {
-        while (active < limit && idx < fns.length) {
-          (function (taskFn) {
-            active++;
-            Promise.resolve()
-              .then(function () {
-                return typeof taskFn === "function" ? taskFn() : Promise.resolve();
-              })
-              .catch(function (err) {
-                console.error("[Visual] 并发池任务失败:", err);
-              })
-              .finally(function () {
-                active--;
-                settled++;
-                if (settled >= fns.length) resolve();
-                else pump();
-              });
-          })(fns[idx++]);
+        if (idx >= fns.length) {
+          resolve();
+          return;
         }
+        var taskFn = fns[idx++];
+        Promise.resolve()
+          .then(function () {
+            return typeof taskFn === "function" ? taskFn() : Promise.resolve();
+          })
+          .catch(function (err) {
+            console.error("[Visual] 队列任务失败:", err);
+          })
+          .finally(function () {
+            if (idx < fns.length) {
+              setTimeout(pump, delayMs);
+            } else {
+              resolve();
+            }
+          });
       }
       pump();
     });
@@ -2056,7 +2255,7 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
 
       container.appendChild(grid);
 
-      runVisualRenderConcurrencyPool(visualRenderTasks, 3);
+      runVisualRenderConcurrencyPool(visualRenderTasks);
 
       container.scrollIntoView({ behavior: "smooth", block: "start" });
     });

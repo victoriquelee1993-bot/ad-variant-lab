@@ -2381,7 +2381,7 @@
       function briefOcrWaitMs(file) {
         var s = file && file.size != null ? Number(file.size) : 0;
         if (isNaN(s) || s < 0) s = 0;
-        return Math.min(900000, Math.max(180000, 120000 + Math.floor(s / 2048) * 400));
+        return Math.min(120000, Math.max(45000, 45000 + Math.floor(s / 4096) * 250));
       }
 
       async function briefEnsureOcrWorker() {
@@ -2390,7 +2390,7 @@
           return null;
         }
         if (briefOcrWorker) return briefOcrWorker;
-        var initMs = 90000;
+        var initMs = 12000; // 从 90 秒压缩到 12 秒极速熔断
         if (typeof Tesseract.createWorker !== "function") return null;
         try {
           briefOcrWorker = await briefRaceWithTimeout(
@@ -2442,6 +2442,7 @@
           return "";
         }
         var waitMs = briefOcrWaitMs(file);
+        waitMs = Math.min(waitMs, 20000); // OCR 识别总时长最多不超过 20 秒，超时直接放弃返回空
         console.log("[Brief] OCR 最长等待 ms:", tag, waitMs);
         await briefEnsureOcrWorker();
         var worker = briefOcrWorker;
@@ -2451,6 +2452,7 @@
             return r1 && r1.data && r1.data.text ? String(r1.data.text).trim() : "";
           } catch (eR1) {
             console.warn("[Brief] worker.recognize 失败或超时，尝试 recognize 直调:", tag, eR1);
+            await briefTerminateOcrWorker();
           }
         }
         if (typeof Tesseract.recognize === "function") {
