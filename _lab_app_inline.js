@@ -1127,44 +1127,56 @@
         targetMax = swp;
       }
 
-      setStoryEngineProgress(
-        styleCfg.name + " 正在计算时间预算…",
-        8 + (typeof styleIndex === "number" ? styleIndex : 0) * 28
-      );
-
       var platformStr = String(p.platform || "");
       var isShortVideo = /TikTok|Reels|Shorts|小红书|Instagram/.test(platformStr);
       var avgShotLen = isShortVideo ? 1.5 : 3.5;
-      var minShots = Math.floor(targetMin / avgShotLen);
-      var maxShots = Math.ceil(targetMax / (isShortVideo ? 0.8 : 2.5));
-      if (minShots < 5) minShots = 5;
-      if (minShots > 20) {
-        minShots = 20;
-        maxShots = 25;
+      var theoreticalShots = Math.ceil(targetMax / avgShotLen);
+
+      var targetNodes = 4;
+      if (theoreticalShots <= 6) {
+        targetNodes = 4;
+      } else if (theoreticalShots <= 12) {
+        targetNodes = 9;
+      } else if (theoreticalShots <= 20) {
+        targetNodes = 16;
+      } else if (theoreticalShots <= 27) {
+        targetNodes = 25;
+      } else {
+        var remainder = theoreticalShots - 25;
+        if (remainder <= 6) targetNodes = 25 + 4;
+        else if (remainder <= 12) targetNodes = 25 + 9;
+        else if (remainder <= 20) targetNodes = 25 + 16;
+        else targetNodes = 25 + 25;
       }
 
+      setStoryEngineProgress(
+        styleCfg.name + " 正在生成，当前时长匹配目标镜头数: " + targetNodes + " 镜...",
+        8 + (typeof styleIndex === "number" ? styleIndex : 0) * 28
+      );
+
       var dynamicPacingBlock =
-        "【最高级别数学死命令：平台与时长硬挂钩】\n" +
-        "当前平台为【" +
-        (platformStr || "未指定") +
-        "】，目标总时长严格限制在【" +
+        "【最高级别数学死命令：阶梯式镜头定额】\n" +
+        "当前目标总时长为【" +
         targetMin +
         "-" +
         targetMax +
-        "s】之间。\n" +
-        "🔥【全平台通用：黄金 3 秒法则】：无论任何平台，视频的前 3 秒（即第 1 镜或前 2 镜）必须是极具视觉冲击力的 Hook！严禁缓慢的环境铺垫！\n" +
+        "s】。\n" +
+        "💥 智能化分镜要求：你本次必须输出【正好 " +
+        targetNodes +
+        " 个镜头】（即 JSON 数组的长度严格等于 " +
+        targetNodes +
+        "）！这是基于 4/9/16/25 阶梯矩阵推算出的最佳剪辑密度，禁止多写或少写。\n" +
+        "🔥【全平台通用法则】：前 3 秒（第 1 镜或前 2 镜）必须是极具视觉冲击力的 Hook！\n" +
         (isShortVideo
-          ? "👉 【短视频极速法则】：单镜绝对禁止超过 2.5 秒！必须输出【至少 " +
-            minShots +
-            " 个，最多 " +
-            maxShots +
-            " 个】高频切换镜头！"
-          : "👉 【传统/电商法则】：你需要输出【" +
-            minShots +
-            " 到 " +
-            maxShots +
-            " 个】镜头。允许出现最高 6s 的长镜头，但必须包含复杂的空间调度（如 Arc Orbit 结合 Dolly In），绝不允许画面死板！") +
-        "\n如果镜头数填不满总时长，强制调用 4/9/16/25 宫格阵列，利用分屏高频闪烁吸收时长。\n";
+          ? "👉 【短视频法则】：单镜严禁超过 2.5 秒，用 " +
+            targetNodes +
+            " 镜的高频切换填满总时长。"
+          : "👉 【传统/电商法则】：必须严格分配 " +
+            targetNodes +
+            " 镜，允许局部出现 4-6s 包含复杂空间调度（如 Arc Orbit）的长镜。") +
+        "\n⚡ 警告：如果总时长极长，导致分配到 " +
+        targetNodes +
+        " 镜后单镜时长依然超标，请在 visual 中调用「宫格分屏阵列」在同一镜内高频闪烁吸收时长，绝不允许通过拖长单个画面的秒数来注水！\n";
 
       const systemPrompt =
         `你是一位身价千万的商业广告导演。你现在的任务是生成一份「初稿即过稿」的专业脚本。
@@ -1257,10 +1269,14 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
 
           if (!styleObj.shots || !Array.isArray(styleObj.shots)) throw new Error("缺少分镜数组");
 
-          var acceptableMin = Math.max(3, Math.floor(minShots * 0.7));
+          var acceptableMin = Math.max(4, Math.floor(targetNodes * 0.75));
           if (styleObj.shots.length < acceptableMin) {
             throw new Error(
-              "AI偷懒拦截：需要至少 " + minShots + " 镜，实际仅输出 " + styleObj.shots.length + " 镜。"
+              "AI偷懒拦截：根据时长算法需要 " +
+                targetNodes +
+                " 镜，实际仅输出 " +
+                styleObj.shots.length +
+                " 镜。"
             );
           }
 

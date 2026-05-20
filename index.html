@@ -1478,6 +1478,11 @@
       }
 
       var referrerPolicy = options.referrerPolicy || "strict-origin-when-cross-origin";
+      var timeoutMs = options.timeout != null ? Number(options.timeout) : 90000;
+      if (isNaN(timeoutMs) || timeoutMs <= 0) timeoutMs = 90000;
+      var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      var timeoutId = null;
+
       var init = {
         method: options.method || "POST",
         mode: "cors",
@@ -1485,6 +1490,14 @@
         referrerPolicy: referrerPolicy,
         headers: headers,
       };
+
+      if (controller) {
+        init.signal = controller.signal;
+        timeoutId = setTimeout(function () {
+          controller.abort();
+        }, timeoutMs);
+      }
+
       if (options.body != null) {
         init.body = options.body;
       }
@@ -1516,7 +1529,14 @@
       var res;
       try {
         res = await fetch(url, init);
+        if (timeoutId) clearTimeout(timeoutId);
       } catch (netErr) {
+        if (timeoutId) clearTimeout(timeoutId);
+        if (netErr && netErr.name === "AbortError") {
+          throw new Error(
+            "【请求超时】AI 模型在 " + timeoutMs / 1000 + " 秒内未返回结果，请稍后重试。"
+          );
+        }
         if (typeof console !== "undefined" && console.error) {
           console.error("[LLM API] 网络层失败 — 未收到 HTTP 响应（不是 403）", {
             label: label,

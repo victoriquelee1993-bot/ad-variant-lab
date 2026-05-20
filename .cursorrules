@@ -64,9 +64,9 @@ Style detection in code: `styleCfg.id` (`"A"`|`"B"`|`"C"`), `isStyleCFastCut(sty
 
 ### LLM prompt: `dynamicPacingBlock` in `craftSingleStyle`
 
-- **Platform-driven rhythm** (not fixed shot counts): Amazon/TikTok → fast cuts (~0.5–2s); Brand TVC → 3–5s compound moves allowed.
-- **Shot count is NOT hardcoded** — model derives density from `targetMin`–`targetMax`.
-- **4 / 9 / 16 / 25 grid arrays** are the primary tool to fill duration without bloating JSON:
+- **Tiered shot matrix**: `theoreticalShots = ceil(targetMax / avgShotLen)` → `targetNodes` on ladder **4 / 9 / 16 / 25** (stack +4/+9/+16/+25 for ultra-long); prompt requires **exactly `targetNodes` shots** in JSON.
+- **Retry gate**: `acceptableMin = max(4, floor(targetNodes * 0.75))` — 25% slack; duration calibration handles the rest.
+- **4 / 9 / 16 / 25 grid arrays** in `visual` when per-shot duration would still overflow:
   - Moderate density → 4 or 9-grid in one `visual`
   - Long targets (>45s) + fast platforms → 16 or 25-grid; stack 4/9 on adjacent shots if needed
   - Style A/B: elegant 4/9 for detail or ensemble; Style C: 16/25 match-cut flashes
