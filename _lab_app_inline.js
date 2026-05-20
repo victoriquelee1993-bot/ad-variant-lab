@@ -850,6 +850,7 @@
 
     /** Style C：单镜不得超过 2.5s，违规则抛错要求模型重写 */
     function assertStyleCShotDurationLimit(shots, phase) {
+      return;
       var maxSec = 2.5;
       var bad = [];
       var si;
@@ -920,14 +921,13 @@
       }
 
       var scale = 1;
-      if (rawSum < lo - 0.02) scale = lo / rawSum;
+      var targetIdeal = roundDurD(lo + (hi - lo) * 0.4); // 目标定在区间中位偏上，拒绝踩底线
+      if (rawSum < targetIdeal) scale = targetIdeal / rawSum;
       else if (rawSum > hi + 0.02) scale = hi / rawSum;
-
-      var goal =
-        rawSum < lo - 0.02 ? lo : rawSum > hi + 0.02 ? hi : rawSum;
+      var goal = rawSum < targetIdeal ? targetIdeal : rawSum > hi + 0.02 ? hi : rawSum;
 
       var tot = 0;
-      var maxPerShot = styleC ? 2.5 : Infinity;
+      var maxPerShot = styleC ? hi * 0.4 : 6.8;
       for (i = 0; i < shots.length; i++) {
         var d = parseFloat(shots[i].duration) || 0;
         var scaled = roundDurD(d * scale);
@@ -941,7 +941,7 @@
       var drift = roundDurD(goal - tot);
       if (shots.length && Math.abs(drift) >= 0.005) {
         var minAllowed = 0.5;
-        var maxAllowed = styleC ? 2 : Infinity;
+        var maxAllowed = maxPerShot;
         if (drift > 0) {
           for (i = shots.length - 1; i >= 0 && drift >= 0.005; i--) {
             var cur = parseFloat(shots[i].duration) || 0;
@@ -1118,51 +1118,19 @@
 
       var minShotsNormal = Math.ceil(targetMin / 3.5);
       var maxShotsNormal = Math.ceil(targetMax / 2.5);
-      var minShotsFast = Math.ceil(targetMin / 1.5);
-      var maxShotsFast = Math.ceil(targetMax / 0.8);
-
+      var styleCShotCountLine = "";
       var styleCGridSplitBlock = "";
-      var styleCShotCountLine =
-        "- 对于 Style C（极速快剪）：绝对禁止长镜头！单镜绝对不准超过 2.5 秒！必须依靠高频剪辑（0.3-2.5s）。为了填满 " +
-        targetMin +
-        "-" +
-        targetMax +
-        "s 的时长，你必须克服惰性，老老实实写出 " +
-        minShotsFast +
-        "-" +
-        maxShotsFast +
-        " 个镜头！\n";
-
       if (styleCfg.id === "C") {
         styleCGridSplitBlock =
-          "\n【Style C · 时长自适应宫格快闪阵列 (Split-screen Grid) 必读】：\n" +
-          "大模型存在输出 JSON 长度惰性，为了在不增加 JSON 对象总数的情况下填满 " +
+          "\n【Style C · 宫格阵列与时长自适应（破解 JSON 长度极限）】：\n" +
+          "为了填满 " +
           targetMin +
           "-" +
           targetMax +
-          "s 的时长并保持极高剪辑密度，**你必须调用「宫格分屏」来吸收冗余时长！**\n" +
-          "请根据目标时长在 visual 描述中自动采用以下阵列（镜头 duration 仍可设置为 1.5-2.5s，但视觉密度极大）：\n" +
-          "- 较短时长 (15-20s)：必须在脚本高潮处加入 1 镜【4 宫格】或【9 宫格】的同屏快闪。\n" +
-          "- 中等时长 (20-30s)：必须包含至少 1 镜【16 宫格】的高频闪烁阵列。\n" +
-          "- 较长时长 (>30s)：绝对核心！必须调用【25 宫格】进行同形异色的 Match Cut 极速闪烁！如果时长依然填不满，请在相邻镜头继续叠加【4 宫格】或【9 宫格】的微距切片组合。\n" +
-          "注意：把上述宫格描述写在单镜的 `visual` 字段里（例如：'画面分裂为16宫格阵列，各格以0.2秒频率快速切换不同材质细节'），用视觉密度换取物理时长，绝不允许使用单镜匀速慢动来拖延时间！\n";
-      }
-
-      if (styleCfg.id === "C" && targetMax > 30) {
-        var minShotsGrid = Math.max(8, Math.ceil(targetMin / 2.5));
-        var maxShotsGrid = Math.max(minShotsGrid, Math.ceil(targetMax / 1.2));
-        styleCShotCountLine =
-          "- 对于 Style C（极速快剪）：目标总时长 " +
-          targetMin +
-          "-" +
-          targetMax +
-          "s（>30s 长片）。单镜严禁超过 2.5s！**必须**用「分屏阵列（Grid Split-screen）」压缩 shots 条目：建议约 " +
-          minShotsGrid +
-          "-" +
-          maxShotsGrid +
-          " 镜（含宫格分屏镜），勿无脑堆砌 " +
-          minShotsFast +
-          "+ 镜导致 JSON 过长被截断。\n";
+          "s 的总时长，同时保持极速快剪的视觉密度，**你必须采用以下策略**：\n" +
+          "1. 常规动作镜：依然保持 0.5s - 2.5s 的极速物理剪辑。\n" +
+          "2. 【破局关键：宫格阵列】：必须在脚本高潮处加入 1~2 镜【16宫格】或【25宫格】的同屏快闪！\n" +
+          "3. 【吸收时长】：**请大胆将包含“宫格阵列”的特殊镜头 duration 设置为 6秒 到 10秒！**（并在 visual 中注明：‘本镜为25宫格阵列，各格以0.2s频率高频闪烁’）。用高密度的画面拼贴来换取物理时长，完美解决总时长不达标的难题！\n";
       }
 
       const systemPrompt =
@@ -1178,7 +1146,7 @@
 【输出格式】：只输出合法 JSON，visual 描述必须是充满镜头感的纯中文，严禁含糊其辞。第 1 镜须直接呈现产品本体或可读的局部核心（禁止纯人物/纯风景无产品前摇）。
 ${buildUniversalBindingPromptBlock(catalogSlotCount)}
 【时长、镜头数与宫格分屏死命令】：目标总时长区间约 ${targetMin}-${targetMax}s。镜头数量严禁为了凑数而机械堆砌，但必须绝对符合物理剪辑规律与风格密度！
-- 对于 Style A/B：单镜允许有 3-4 秒的呼吸感。为满足总时长，你必须写出约 ${minShotsNormal}-${maxShotsNormal} 个镜头。
+- 对于 Style A/B：为了自然填满 ${targetMin}-${targetMax}s 的目标时长，允许且鼓励使用 4-7 秒的【复合长镜头】。对于长镜头，必须在 visual 和 motion 中设计两段式的复合运镜（例如：先 Dolly In 缓慢推进，中段转 Arc Orbit 环绕），用高级的呼吸感吸收时长，绝不允许长时间呆板静止！
 ${styleCShotCountLine}【高级提密度手法：宫格分屏（Split-screen Grid）】：
 当需要填满较长视频或展示同系列多配色时，**强制要求在脚本中后段使用『宫格分屏』来消耗镜头数与提升信息密度！**
 - Style A：用 4 宫格同屏严谨对比不同材质/表盘在相同光影下的微距细节。
