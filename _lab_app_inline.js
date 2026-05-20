@@ -669,7 +669,7 @@
     }
 
     var galItems = document.querySelectorAll("#product-gallery .gallery-item");
-    var catalogSlotCount = galItems.length > 0 ? galItems.length : n;
+    var catalogSlotCount = Math.min(galItems.length > 0 ? galItems.length : n, 6);
 
     var materialCatalog = "";
     var materialCatalogLines = [];
@@ -943,7 +943,7 @@
       var goal = rawSum < targetIdeal ? targetIdeal : rawSum > hi + 0.02 ? hi : rawSum;
 
       var tot = 0;
-      var maxPerShot = hi * 0.5; // 允许任意风格通过宫格阵列吸收长达一半此时长，彻底打破天花板死锁
+      var maxPerShot = styleC ? 2.5 : hi * 0.5; // Style C 单镜严禁超过 2.5s；其他风格允许宫格阵列吸收时长
       for (i = 0; i < shots.length; i++) {
         var d = parseFloat(shots[i].duration) || 0;
         var scaled = roundDurD(d * scale);
@@ -1138,6 +1138,10 @@
       var minShots = Math.floor(targetMin / avgShotLen);
       var maxShots = Math.ceil(targetMax / (isShortVideo ? 0.8 : 2.5));
       if (minShots < 5) minShots = 5;
+      if (minShots > 20) {
+        minShots = 20;
+        maxShots = 25;
+      }
 
       var dynamicPacingBlock =
         "【最高级别数学死命令：平台与时长硬挂钩】\n" +
