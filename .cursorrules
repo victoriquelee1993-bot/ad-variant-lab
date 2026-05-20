@@ -85,10 +85,9 @@ Style detection in code: `styleCfg.id` (`"A"`|`"B"`|`"C"`), `isStyleCFastCut(sty
 - **Floor per shot**: `minAllowed = 0.5` during drift trim.
 - **No `duration_weight`** — strip on write.
 
-### Style C strict assert (DISABLED)
+### Style C strict assert (ENABLED)
 
-- `assertStyleCShotDurationLimit` begins with **`return;`** — the 2.5s throw path is **intentionally off** to avoid JSON-length / total-duration deadlock.
-- Dead code below `return` documents legacy 2.5s enforcement; re-enable only if product explicitly wants hard Style C caps again.
+- `assertStyleCShotDurationLimit` throws if any shot `duration` exceeds **2.5s** (tolerance +0.02s); called from `clampShotDurationsToWindow` before/after calibration when `styleC` is true.
 
 ---
 
@@ -138,7 +137,7 @@ Include `shot` in `renderCtx` so redraws persist URLs.
 |----------|------|----------------|
 | `craftSingleStyle` | `_lab_app_inline.js` | LLM storyboard per style; `dynamicPacingBlock`, `systemPrompt` |
 | `clampShotDurationsToWindow` | same | Duration calibration |
-| `assertStyleCShotDurationLimit` | same | Disabled (`return` first line) |
+| `assertStyleCShotDurationLimit` | same | Style C per-shot ≤2.5s enforcement |
 | `renderStoryboardDashboard` | same | Tabs, timeline HTML, visual grid restore |
 | `buildVisualDrawPrompt` / `getStyleMoodSuffix` | same | DALL·E prompt assembly |
 | `requestVisualShotImage` | same | Image API + `visual_image_url` |

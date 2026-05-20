@@ -422,40 +422,49 @@
   }
 
   btnCraftStoryboard.addEventListener("click", async function () {
-    warnIfFileProtocol();
-    const apiKey =
-      typeof window.getLlmApiKeyFromInput === "function"
-        ? window.getLlmApiKeyFromInput()
-        : String(document.getElementById("llm-api-key").value || "").trim();
-    const briefContent = document.getElementById("selling-textarea").value.trim();
+    if (btnCraftStoryboard.disabled) return;
+    btnCraftStoryboard.disabled = true;
+    var originalBtnText = btnCraftStoryboard.textContent;
+    btnCraftStoryboard.textContent = "推演中... (请勿重复点击)";
 
-    var dashClear = document.getElementById("storyDashboard");
-    if (dashClear) {
-      dashClear.classList.remove("story-board-finalized");
-      dashClear.style.boxShadow = "";
-    }
-
-    if (!apiKey) return alert("请先输入 OPENAI API KEY");
-    if (!briefContent || briefContent.indexOf("【API 请求失败】") !== -1) {
-      return alert("请先上传素材并等待‘卖点简报’解析完成");
-    }
-
-    const storyModsEl = document.getElementById("storyScriptMods");
-
-    const params = {
-      platform: document.getElementById("platform-select").value,
-      ratio: document.getElementById("ratio-select").value,
-      duration: document.getElementById("durLabel").innerText,
-      product: document.getElementById("product-input").value,
-      category: document.getElementById("category-input").value,
-      brief: briefContent,
-      mods: storyModsEl ? String(storyModsEl.value || "") : "",
-      materialCount: getMaterialGridCount(),
-      usage_scenarios: collectUsageScenarios(),
-    };
-
-    setLabBusy(true);
     try {
+      warnIfFileProtocol();
+      const apiKey =
+        typeof window.getLlmApiKeyFromInput === "function"
+          ? window.getLlmApiKeyFromInput()
+          : String(document.getElementById("llm-api-key").value || "").trim();
+      const briefContent = document.getElementById("selling-textarea").value.trim();
+
+      var dashClear = document.getElementById("storyDashboard");
+      if (dashClear) {
+        dashClear.classList.remove("story-board-finalized");
+        dashClear.style.boxShadow = "";
+      }
+
+      if (!apiKey) {
+        alert("请先输入 OPENAI API KEY");
+        return;
+      }
+      if (!briefContent || briefContent.indexOf("【API 请求失败】") !== -1) {
+        alert("请先上传素材并等待‘卖点简报’解析完成");
+        return;
+      }
+
+      const storyModsEl = document.getElementById("storyScriptMods");
+
+      const params = {
+        platform: document.getElementById("platform-select").value,
+        ratio: document.getElementById("ratio-select").value,
+        duration: document.getElementById("durLabel").innerText,
+        product: document.getElementById("product-input").value,
+        category: document.getElementById("category-input").value,
+        brief: briefContent,
+        mods: storyModsEl ? String(storyModsEl.value || "") : "",
+        materialCount: getMaterialGridCount(),
+        usage_scenarios: collectUsageScenarios(),
+      };
+
+      setLabBusy(true);
       const getter = window.__getStoryboardImageFiles;
       const files = typeof getter === "function" ? getter() : [];
       if (files.length > 0) {
@@ -500,6 +509,8 @@
       clearStoryEngineProgress();
     } finally {
       setLabBusy(false);
+      btnCraftStoryboard.disabled = false;
+      btnCraftStoryboard.textContent = originalBtnText;
     }
   });
 
@@ -856,7 +867,6 @@
 
     /** Style C：单镜不得超过 2.5s，违规则抛错要求模型重写 */
     function assertStyleCShotDurationLimit(shots, phase) {
-      return;
       var maxSec = 2.5;
       var bad = [];
       var si;
@@ -1565,6 +1575,9 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
   function syncStoryboardModsDropdown(styles) {
     var modsTarget = document.getElementById("storyModsTarget");
     if (!modsTarget || !Array.isArray(styles)) return;
+
+    var oldVal = modsTarget.value;
+
     modsTarget.innerHTML = "";
     var hasAny = false;
     styles.forEach(function (style, idx) {
@@ -1575,9 +1588,14 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
       opt.textContent = style.styleName || "Style " + (idx + 1);
       modsTarget.appendChild(opt);
     });
+
     if (hasAny) {
       modsTarget.removeAttribute("disabled");
-      if (!modsTarget.value) modsTarget.value = "0";
+      if (oldVal && modsTarget.querySelector('option[value="' + oldVal + '"]')) {
+        modsTarget.value = oldVal;
+      } else if (!modsTarget.value) {
+        modsTarget.value = "0";
+      }
     }
   }
 
@@ -2258,6 +2276,57 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
       runVisualRenderConcurrencyPool(visualRenderTasks);
 
       container.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  var btnCopyMarkdownFeishu = document.getElementById("btnCopyMarkdownFeishu");
+  if (btnCopyMarkdownFeishu) {
+    btnCopyMarkdownFeishu.addEventListener("click", function () {
+      var data = window.__LAST_STORYBOARD_DATA__;
+      if (!data || !data.length) return alert("暂无分镜数据可复制，请先生成脚本。");
+
+      var activeTabBtn = document.querySelector(".tab-btn.is-active");
+      var sIdx = activeTabBtn ? parseInt(String(activeTabBtn.dataset.tab || "0"), 10) : 0;
+      if (isNaN(sIdx) || sIdx < 0) sIdx = 0;
+
+      var style = data[sIdx];
+      if (!style || !Array.isArray(style.shots) || !style.shots.length) {
+        return alert("当前脚本数据异常，无法复制。");
+      }
+
+      var md = "### " + (style.styleName || "AI 分镜脚本") + "\n\n";
+      md += "| 镜头 | 画面描述 (Visual) | 镜头运动 (Motion) | 旁白/音效 (Audio) | 时长 (s) |\n";
+      md += "| :--- | :--- | :--- | :--- | :--- |\n";
+
+      style.shots.forEach(function (shot, i) {
+        var visual = String(shot.visual || "").replace(/\n/g, " ");
+        var motion = String(shot.motion || "").replace(/\n/g, " ");
+        var audio = String(shot.audio || "").replace(/\n/g, " ");
+        var duration = shot.duration != null ? shot.duration : "-";
+
+        md +=
+          "| **" +
+          (i + 1) +
+          "** | " +
+          visual +
+          " | " +
+          motion +
+          " | " +
+          audio +
+          " | " +
+          duration +
+          "s |\n";
+      });
+
+      navigator.clipboard.writeText(md).then(function () {
+        var originalText = btnCopyMarkdownFeishu.textContent;
+        btnCopyMarkdownFeishu.textContent = "✅ 已复制到剪贴板！";
+        setTimeout(function () {
+          btnCopyMarkdownFeishu.textContent = originalText;
+        }, 2000);
+      }).catch(function (err) {
+        alert("复制失败，请检查浏览器剪贴板权限：" + err);
+      });
     });
   }
 })();
