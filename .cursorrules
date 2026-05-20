@@ -1,0 +1,154 @@
+# Ad Variant Lab — Director's Creative Engine (V2.0)
+
+You are an expert Frontend Engineer and AI Prompt Architect working on **Ad Variant Lab**, a vanilla JavaScript/HTML/CSS app that generates AI commercial storyboard scripts and photorealistic reference images.
+
+Primary implementation files: `index.html` (network layer, globals), `_lab_app_inline.js` (director engine, dashboard, visual board).
+
+---
+
+## 1. Tech Stack & Code Style
+
+- **Vanilla only**: No React, Vue, or Angular. Use ES6+ (`async/await`, `const`/`let`, Promises).
+- **IIFE modules**: Wrap major logic in `(function () { ... })();` unless deliberately exporting to `window`.
+- **DOM**: Use `getElementById` / `querySelector` / `createElement`. **Always null-check** before operating on nodes.
+- **CSS**: Reuse variables (`--blue`, `--bg`, `--card-bg`, `--border-color`) and components (`.btn-pill`, `.ui-control`, `.field`). Do not invent parallel design systems.
+
+---
+
+## 2. Architecture & Global APIs
+
+### Network layer (mandatory)
+
+- **All LLM / DALL·E calls** MUST use `window.llmApiFetch(path, options)` from `index.html` (Vercel `/api/proxy`, local API keys).
+- **Never** use raw `fetch()` or `axios` for OpenAI paths.
+- `_lab_app_inline.js` wraps this as local `llmApiFetch()` — do not bypass it.
+
+### Globals
+
+- API key: `window.getLlmApiKeyFromInput()`
+- Models: `window.getTextModel()`, `window.getImageModel()`
+- Storyboard cache: `window.__LAST_STORYBOARD_DATA__` (array of style objects with `shots[]`)
+- Errors: `window.formatLlmFetchError`, `formatLlmFetchAlertMessage`, `maybeAlertLlmFetchFailure` — distinguish network (CORS/offline) vs HTTP (401, 403, 429).
+
+### Exports / clipboard
+
+- Use direct string building or `navigator.clipboard.writeText` for exports (e.g. Markdown table). No markdown-generation libraries.
+
+---
+
+## 3. Core Business Logic — 5 Industrial Standards
+
+When editing storyboard prompts or JSON processing, enforce:
+
+1. **Vectorized motion**: Use precise terms (Dolly In, Arc Orbit, Rack Focus, Truck, Pedestal). Reject vague phrases like “镜头动一下”.
+2. **Lighting rig**: Every shot should specify lighting (Scan Light, Rim Light, Tyndall, window light, etc.).
+3. **Visual DNA**: Extract exact physical product traits into `visualDNA` (materials, finishes, model names) for downstream image gen.
+4. **Space anchors (Universal Binding)**: Match images semantically — `ESTABLISHING`, `HERO_SHOT`, `DETAIL_MACRO`, `INTERACTIVE`. No macro copy on establishing assets.
+5. **Atomic duration binding**: Use numeric `duration` per shot (physical seconds). **Never** use `duration_weight`. Sum must land in the user’s `[totalSecMin, totalSecMax]` window after `clampShotDurationsToWindow`.
+
+---
+
+## 4. Three Hardcoded Styles
+
+| Style | Role | Prompt / mood constraints |
+|-------|------|---------------------------|
+| **A** | Precision / macro | Sterile environment, macro probe, white/grey, no clutter; **no lifestyle environments** in director rules |
+| **B** | Lifestyle / narrative | Warm lifestyle, bokeh; establish → emotion → product; **no production tools** |
+| **C** | Hook-driven / fast cut | High contrast, motion blur, impact; **no uniform slow motion**; prefers 16/25 grid arrays for density |
+
+Style detection in code: `styleCfg.id` (`"A"`|`"B"`|`"C"`), `isStyleCFastCut(styleOpts)`, and `getStyleMoodSuffix(style, sIdx)`.
+
+---
+
+## 5. Duration & Pacing (CURRENT — do not revert without explicit request)
+
+### LLM prompt: `dynamicPacingBlock` in `craftSingleStyle`
+
+- **Platform-driven rhythm** (not fixed shot counts): Amazon/TikTok → fast cuts (~0.5–2s); Brand TVC → 3–5s compound moves allowed.
+- **Shot count is NOT hardcoded** — model derives density from `targetMin`–`targetMax`.
+- **4 / 9 / 16 / 25 grid arrays** are the primary tool to fill duration without bloating JSON:
+  - Moderate density → 4 or 9-grid in one `visual`
+  - Long targets (>45s) + fast platforms → 16 or 25-grid; stack 4/9 on adjacent shots if needed
+  - Style A/B: elegant 4/9 for detail or ensemble; Style C: 16/25 match-cut flashes
+- Grid shots: describe array in `visual`, assign **longer `duration` (e.g. 6–12s)**; internal micro-cuts absorb time — **not** boring single-take padding.
+
+`systemPrompt` injects `${dynamicPacingBlock}` — **do not** re-add removed blocks (`styleCShotCountLine`, `styleCGridSplitBlock`, fixed `minShotsNormal`/`maxShotsFast` lines, or per-style 2.5s/4s caps in the pacing section).
+
+### User message: platform hooks
+
+- `userTextBlock` includes platform line + **Amazon/short-video rule**: no >2s establishing; shot 1 must be product hero.
+
+### Post-processing: `clampShotDurationsToWindow`
+
+- **Goal scaling**: `targetIdeal = lo + (hi - lo) * 0.4` — scale toward mid-upper band, **not** the bare minimum `lo` (fixes Style A/B stuck at floor).
+- **Per-shot ceiling (all styles)**: `maxPerShot = maxAllowed = hi * 0.5` (e.g. 60s max → 30s per shot cap) so grid/array shots can absorb duration.
+- **Floor per shot**: `minAllowed = 0.5` during drift trim.
+- **No `duration_weight`** — strip on write.
+
+### Style C strict assert (DISABLED)
+
+- `assertStyleCShotDurationLimit` begins with **`return;`** — the 2.5s throw path is **intentionally off** to avoid JSON-length / total-duration deadlock.
+- Dead code below `return` documents legacy 2.5s enforcement; re-enable only if product explicitly wants hard Style C caps again.
+
+---
+
+## 6. Visual Generation (DALL·E)
+
+### `buildVisualDrawPrompt`
+
+- **No** “storyboard sketch” language — use **hyper-realistic commercial photography** (ARRI Alexa 65, Zeiss Master Prime, 8K).
+- Pull category from `#category-input` for industry luxury tone when set.
+- Chain: `visualDNA` → product line → `shot.visual` → lighting (+ studio quality) → motion → `getStyleMoodSuffix`.
+
+### Persistence & UI
+
+- On success, `requestVisualShotImage` sets `opts.shot.visual_image_url` (mutates `__LAST_STORYBOARD_DATA__` shot refs).
+- **Per-tab board**: `#btnRenderVisualBoard` uses **active** `.tab-btn.is-active` → `#panel-{sIdx}` → `.style-visual-board` (not global `#visualBoardContainer` only).
+- `renderStoryboardDashboard` restores grids from `shot.visual_image_url` when re-rendering; **do not** clear all visual state at dashboard mount.
+
+### `renderCtx` for redraw
+
+Include `shot` in `renderCtx` so redraws persist URLs.
+
+---
+
+## 7. Multi-modal & File Handling
+
+- **Images to Vision**: Use `fileToCompressedBase64` before API upload (avoid 413).
+- **Brief parsing**: `.pdf`, `.pptx`, `.docx`, `.xlsx`, images (Tesseract OCR) — keep robust fallbacks on parse failure.
+
+---
+
+## 8. Anti-patterns (recent regressions to avoid)
+
+| Do NOT | Do instead |
+|--------|------------|
+| Fixed shot count lines (`minShotsFast`, `maxShotsNormal` in prompt) | `dynamicPacingBlock` + platform pacing |
+| Style C-only 2.5s / Style A/B 4s / 6.8s caps in clamp or prompt | `hi * 0.5` ceiling + platform/grid rules |
+| Scale totals only to `lo` | Scale to `targetIdeal` |
+| `Cinematic storyboard sketch` in image prompts | Commercial photography stack in `buildVisualDrawPrompt` |
+| Generate all styles’ images in one global container loop | Current tab’s `style.shots` only |
+| Raw `fetch()` for OpenAI | `window.llmApiFetch` |
+
+---
+
+## 9. Key Functions (quick map)
+
+| Function | File | Responsibility |
+|----------|------|----------------|
+| `craftSingleStyle` | `_lab_app_inline.js` | LLM storyboard per style; `dynamicPacingBlock`, `systemPrompt` |
+| `clampShotDurationsToWindow` | same | Duration calibration |
+| `assertStyleCShotDurationLimit` | same | Disabled (`return` first line) |
+| `renderStoryboardDashboard` | same | Tabs, timeline HTML, visual grid restore |
+| `buildVisualDrawPrompt` / `getStyleMoodSuffix` | same | DALL·E prompt assembly |
+| `requestVisualShotImage` | same | Image API + `visual_image_url` |
+| `window.llmApiFetch` | `index.html` | Proxy + auth |
+
+---
+
+## 10. When Modifying This Project
+
+1. Read surrounding conventions in `_lab_app_inline.js` before editing.
+2. Keep diffs minimal; do not reintroduce removed pacing/cap logic unless the user asks.
+3. Test mentally: total duration ∈ `[min,max]`, active tab visual board, grid shots can use long `duration`, image prompts stay photorealistic.
+4. Do not commit unless the user requests it.
