@@ -1761,12 +1761,12 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
   function getStyleMoodSuffix(style, sIdx) {
     var name = String((style && style.styleName) || "");
     if (/style\s*a\b/i.test(name) || (sIdx === 0 && !/style\s*[bc]\b/i.test(name))) {
-      return "Sterile clean laboratory, macro lens, pure white and grey background, hyper-realistic, NO clutter.";
+      return "Sterile clean environment, macro probe lens, pure white and grey background, extreme micro-details, sharp focus, NO clutter, pristine material texture.";
     }
     if (/style\s*b\b/i.test(name) || sIdx === 1) {
-      return "Cozy living room, lifestyle photography, warm afternoon sunlight, depth of field, blurred background.";
+      return "High-end lifestyle photography, warm afternoon sunlight, beautiful depth of field, blurred background, cinematic bokeh, authentic and elegant.";
     }
-    return "Dynamic angle, motion blur, cyberpunk or high contrast neon lighting, dramatic.";
+    return "Dynamic angle, motion blur, high contrast dramatic lighting, deep shadows, aggressive composition, extreme visual impact.";
   }
 
   function buildVisualDrawPrompt(shot, style, productName, sIdx) {
@@ -1775,17 +1775,26 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
       style && style.visualDNA && String(style.visualDNA).trim()
         ? String(style.visualDNA).trim()
         : window.__MASTER_VISUAL_PROMPT__ || productName;
+
+    var catEl = document.getElementById("category-input");
+    var category = catEl ? String(catEl.value || "").trim() : "";
+
     var parts = [
-      "Cinematic commercial storyboard sketch, high-end professional advertising shot.",
-      "Product exact appearance: " + exactProductDescription + ".",
-      "Action/Scene: " + cleanVisual,
+      "Hyper-realistic high-end commercial photography, photorealistic masterpiece, shot on ARRI Alexa 65, Zeiss Master Prime lens, 8k resolution, highly detailed.",
     ];
+    if (category) parts.push("Industry visual style: Top-tier luxury " + category + " commercial aesthetic, perfectly matching the industry's highest visual standards.");
+
+    parts.push("Product exact appearance: " + exactProductDescription + ".");
+    parts.push("Action/Scene: " + cleanVisual);
+
     var lighting = shot.lighting != null ? String(shot.lighting).trim() : "";
-    if (lighting) parts.push("Lighting: " + lighting);
+    if (lighting) parts.push("Lighting: " + lighting + ", professional studio quality.");
     var motion = shot.motion != null ? String(shot.motion).trim() : "";
     if (motion) parts.push("Camera/Motion: " + motion);
+
     var mood = getStyleMoodSuffix(style, sIdx);
     if (mood) parts.push(mood);
+
     return parts.join(" ");
   }
 
