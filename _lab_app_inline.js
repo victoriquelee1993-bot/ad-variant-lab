@@ -927,7 +927,7 @@
       var goal = rawSum < targetIdeal ? targetIdeal : rawSum > hi + 0.02 ? hi : rawSum;
 
       var tot = 0;
-      var maxPerShot = styleC ? hi * 0.4 : 6.8;
+      var maxPerShot = hi * 0.5; // 允许任意风格通过宫格阵列吸收长达一半此时长，彻底打破天花板死锁
       for (i = 0; i < shots.length; i++) {
         var d = parseFloat(shots[i].duration) || 0;
         var scaled = roundDurD(d * scale);
@@ -1116,22 +1116,19 @@
         8 + (typeof styleIndex === "number" ? styleIndex : 0) * 28
       );
 
-      var minShotsNormal = Math.ceil(targetMin / 3.5);
-      var maxShotsNormal = Math.ceil(targetMax / 2.5);
-      var styleCShotCountLine = "";
-      var styleCGridSplitBlock = "";
-      if (styleCfg.id === "C") {
-        styleCGridSplitBlock =
-          "\n【Style C · 宫格阵列与时长自适应（破解 JSON 长度极限）】：\n" +
-          "为了填满 " +
-          targetMin +
-          "-" +
-          targetMax +
-          "s 的总时长，同时保持极速快剪的视觉密度，**你必须采用以下策略**：\n" +
-          "1. 常规动作镜：依然保持 0.5s - 2.5s 的极速物理剪辑。\n" +
-          "2. 【破局关键：宫格阵列】：必须在脚本高潮处加入 1~2 镜【16宫格】或【25宫格】的同屏快闪！\n" +
-          "3. 【吸收时长】：**请大胆将包含“宫格阵列”的特殊镜头 duration 设置为 6秒 到 10秒！**（并在 visual 中注明：‘本镜为25宫格阵列，各格以0.2s频率高频闪烁’）。用高密度的画面拼贴来换取物理时长，完美解决总时长不达标的难题！\n";
-      }
+      var dynamicPacingBlock =
+        "【最高级核心：平台节奏与 4/9/16/25 动态镜头调度】\n" +
+        "1. 节奏由平台决定：如 亚马逊/TikTok 必须极速快剪（禁止拖沓铺垫，单镜0.5-2s）；如 Brand TVC 允许 3-5s 复合长镜头。\n" +
+        "2. 镜头数绝不定死：请根据目标时长 " +
+        targetMin +
+        "-" +
+        targetMax +
+        "s 的区间自动波动，自己计算需要多庞大的信息量！\n" +
+        "3. 【破局利器：4/9/16/25 宫格阵列】：为了在不拉长 JSON 的前提下满足你计算出的庞大镜头需求，你必须智能调用分屏宫格！\n" +
+        "   - 若需要一定的信息密度，请调用【4宫格】或【9宫格】同屏快闪。\n" +
+        "   - 若时长极长（>45s）且平台需高频快剪，必须调用【16宫格】甚至【25宫格】！如果 25 宫格仍填不满时间，可在相邻镜头继续叠加 4 或 9 宫格！\n" +
+        "   - Style A/B 可用优雅的 4/9 宫格对比细节或群像；Style C 须用 16/25 宫格极速同形异色闪烁。\n" +
+        "注意：把宫格阵列的描述写在单镜 visual 里，并给该阵列分配长 duration（如 6-12s），用内部的微距切割与高频闪烁来吸收物理时长，绝不允许用呆板的单镜头拖时间！\n";
 
       const systemPrompt =
         `你是一位身价千万的商业广告导演。你现在的任务是生成一份「初稿即过稿」的专业脚本。
@@ -1145,17 +1142,8 @@
 
 【输出格式】：只输出合法 JSON，visual 描述必须是充满镜头感的纯中文，严禁含糊其辞。第 1 镜须直接呈现产品本体或可读的局部核心（禁止纯人物/纯风景无产品前摇）。
 ${buildUniversalBindingPromptBlock(catalogSlotCount)}
-【时长、镜头数与宫格分屏死命令】：目标总时长区间约 ${targetMin}-${targetMax}s。镜头数量严禁为了凑数而机械堆砌，但必须绝对符合物理剪辑规律与风格密度！
-- 对于 Style A/B：为了自然填满 ${targetMin}-${targetMax}s 的目标时长，允许且鼓励使用 4-7 秒的【复合长镜头】。对于长镜头，必须在 visual 和 motion 中设计两段式的复合运镜（例如：先 Dolly In 缓慢推进，中段转 Arc Orbit 环绕），用高级的呼吸感吸收时长，绝不允许长时间呆板静止！
-${styleCShotCountLine}【高级提密度手法：宫格分屏（Split-screen Grid）】：
-当需要填满较长视频或展示同系列多配色时，**强制要求在脚本中后段使用『宫格分屏』来消耗镜头数与提升信息密度！**
-- Style A：用 4 宫格同屏严谨对比不同材质/表盘在相同光影下的微距细节。
-- Style B：用分屏展现群像（如画面分裂，展现不同阶层/生活场景的人物同时佩戴不同款式）。
-- Style C：配合 Match Cut，让画面分裂成 16 或 25 宫格进行同形异色的极速闪烁阵列。
-请利用这种分屏手法，合情合理地完成上述要求的镜头数量！
-${styleCGridSplitBlock}
-
-【物理算数死命令】：所有镜头的 duration 累加总和必须严格落在 ${targetMin}-${targetMax} 秒之间！绝对禁止只写几个长镜头糊弄了事！单镜 duration 严禁超过 4 秒（Style C必须在 0.5-2.5 秒内）！
+${dynamicPacingBlock}
+【物理算数死命令】：所有镜头的 duration 累加总和必须严格落在 ${targetMin}-${targetMax} 秒之间！单镜时长由投放平台节奏与 4/9/16/25 宫格阵列策略动态决定；宫格阵列镜可分配更长 duration 吸收总长，绝不允许用少量呆板匀速单镜糊弄总长！
 【技术铁律·解析兼容】顶层含字符串 director_treatment、visualDNA（必填：顶级英文 DALL-E 生图 Prompt，精确描述产品外观材质与型号细节）与数组 shots；每镜须含 source_image_id（整数）、matching_reason（景别匹配理由，一句中文）、duration（代表绝对物理秒数，数字格式如1.5、2.0）、visual、motion。严禁输出 duration_weight！
 visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
 
