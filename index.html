@@ -2430,7 +2430,7 @@
           return null;
         }
         if (briefOcrWorker) return briefOcrWorker;
-        var initMs = 30000;
+        var initMs = 45000;
         if (typeof Tesseract.createWorker !== "function") return null;
         try {
           briefOcrWorker = await briefRaceWithTimeout(
@@ -2541,8 +2541,7 @@
           if (busyLabelEl) busyLabelEl.textContent = LAB_BUSY_OCR_INIT_LABEL;
 
           var waitMs = briefOcrWaitMs(file);
-          waitMs = Math.min(waitMs, 20000);
-          var initMs = 30000;
+          var initMs = 45000;
           console.log("[Brief] OCR 本地 init/recognize 上限 ms:", tag, initMs, waitMs);
 
           var localText = "";

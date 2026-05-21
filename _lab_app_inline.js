@@ -1331,8 +1331,24 @@ ${dynamicPacingBlock}
 
         // 动态构建当前批次的系统 Prompt
         var currentSystemPrompt = systemPrompt;
-        if (batchCount > 1 && lastShotContext) {
-           currentSystemPrompt += `\n\n【分批串联死命令】：这是第 ${batchCount} 批请求，请接着上一批继续写！你本次只需输出 ${shotsToRequest} 个镜头。上一镜（第${currentShots.length}镜）画面是：“${lastShotContext.visual}”，动作是：“${lastShotContext.motion}”。请确保本批次第 1 镜与上一镜在动作和空间上完美衔接！`;
+        if (batchCount === 1) {
+          currentSystemPrompt +=
+            "\n\n【分批策略死命令】：这是第 1 批，你本次只需输出 " +
+            shotsToRequest +
+            " 个镜头。严禁提前把全片写完！";
+        } else if (batchCount > 1 && lastShotContext) {
+          currentSystemPrompt +=
+            "\n\n【分批串联死命令】：这是第 " +
+            batchCount +
+            " 批请求，请接着上一批继续写！你本次只需输出 " +
+            shotsToRequest +
+            " 个镜头。上一镜（第" +
+            currentShots.length +
+            "镜）画面是：「" +
+            lastShotContext.visual +
+            "」，动作是：「" +
+            lastShotContext.motion +
+            "」。请确保本批次第 1 镜与上一镜在动作和空间上完美衔接！";
         }
 
         var batchSuccess = false;
