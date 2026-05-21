@@ -2279,8 +2279,8 @@ ${dynamicPacingBlock}
         .catch(function (err) {
           if (retriesLeft > 0 && isVisualRateLimitError(err)) {
             loading.innerHTML =
-              "<span style='font-size:12px;color:#666;'>限流冷却中，2.5s 后重试…</span>";
-            return labSleep(2500).then(function () {
+              "<span style='font-size:12px;color:#666;'>限流冷却中，10s 后重试…</span>";
+            return labSleep(10000).then(function () {
               return runImageGenAttempt(retriesLeft - 1);
             });
           }
@@ -2337,7 +2337,7 @@ ${dynamicPacingBlock}
     var runToken = Date.now();
     window.__VISUAL_RENDER_TOKEN = runToken;
 
-    var delayMs = 10000;
+    var delayMs = 20000;
 
     return new Promise(function (resolve) {
       var idx = 0;
