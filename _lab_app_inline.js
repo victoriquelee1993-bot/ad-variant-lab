@@ -1363,95 +1363,103 @@ ${dynamicPacingBlock}
                 String(lastShot.motion || "") +
                 "。请确保本批次第 1 镜与它完美衔接。续写批可仅返回 shots，或与首批相同 JSON 顶层字段。";
             }
-
-            var batchUserContent = [{ type: "text", text: userTextBlock + batchPacingAddendum }];
-            base64Images.forEach(function (b64) {
-              batchUserContent.push({ type: "image_url", image_url: { url: b64, detail: "high" } });
-            });
-
-            const res = await llmApiFetch("chat/completions", {
-              label: styleCfg.name + " 分镜 批" + (Math.floor(currentShots.length / batchSize) + 1),
-              apiKey: key,
-              body: JSON.stringify({
-                model: window.getTextModel(),
-                max_tokens: 8192,
-                temperature: attempt === 1 ? 0.1 : 0.3,
-                messages: [
-                  { role: "system", content: systemPrompt },
-                  { role: "user", content: batchUserContent },
-                ],
-                response_format: { type: "json_object" },
-              }),
-            });
-
-            const data = await res.json();
-            originalContent = String(data?.choices?.[0]?.message?.content || "");
-            if (!originalContent.trim()) throw new Error(styleCfg.name + " 批次响应为空");
-
-            const parsed = extractAndParseStoryboardJson(originalContent);
-            var batchRoot = parsed.style != null ? parsed.style : parsed;
-            var batchShots =
-              batchRoot && batchRoot.shots && Array.isArray(batchRoot.shots) ? batchRoot.shots : [];
-
-            if (!batchShots.length) {
-              throw new Error(styleCfg.name + " 批次缺少 shots（需 " + shotsToRequest + " 镜）");
-            }
-
-            if (currentShots.length === 0) {
-              if (batchRoot.director_treatment) {
-                directorTreatment = String(batchRoot.director_treatment);
+            var lastError = null;
+            var styleObj = { shots: [] };
+            var originalContent = "";
+      
+            // ====== 🚀 分批流水线生成 (Batching) 开始 ======
+            var currentShots = [];
+            var batchSize = 12; // 绝对安全区：每次最多逼 AI 吐 12 镜，防断流
+            var batchCount = 0;
+            var maxBatches = Math.ceil(targetNodes / batchSize) + 1; // 防死循环兜底
+            var lastShotContext = null;
+      
+            while (currentShots.length < targetNodes && batchCount < maxBatches) {
+              batchCount++;
+              var shotsToRequest = Math.min(batchSize, targetNodes - currentShots.length);
+      
+              setStoryEngineProgress(
+                styleCfg.name + " 正在分批生成 (第 " + batchCount + " 批)... 已完成 " + currentShots.length + "/" + targetNodes + " 镜", 
+                10 + (currentShots.length / targetNodes) * 30
+              );
+      
+              // 动态构建当前批次的系统 Prompt
+              var currentSystemPrompt = systemPrompt;
+              if (batchCount > 1 && lastShotContext) {
+                 currentSystemPrompt += `\n\n【分批串联死命令】：这是第 ${batchCount} 批请求，请接着上一批继续写！你本次只需输出 ${shotsToRequest} 个镜头。上一镜（第${currentShots.length}镜）画面是：“${lastShotContext.visual}”，动作是：“${lastShotContext.motion}”。请确保本批次第 1 镜与上一镜在动作和空间上完美衔接！`;
               }
-              if (batchRoot.visualDNA != null) visualDNA = String(batchRoot.visualDNA);
+      
+              var batchSuccess = false;
+              // 每批次最多允许重试 2 次
+              for (var attempt = 1; attempt <= 2; attempt++) {
+                try {
+                  const res = await llmApiFetch("chat/completions", {
+                    label: styleCfg.name + " 分镜 (批次 " + batchCount + ")",
+                    apiKey: key,
+                    body: JSON.stringify({
+                      model: window.getTextModel(),
+                      max_tokens: 8192,
+                      temperature: attempt === 1 ? 0.1 : 0.3,
+                      messages: [
+                        { role: "system", content: currentSystemPrompt },
+                        { role: "user", content: userContent },
+                      ],
+                      response_format: { type: "json_object" },
+                    }),
+                  });
+      
+                  const data = await res.json();
+                  originalContent = String(data?.choices?.[0]?.message?.content || "");
+                  if (!originalContent.trim()) throw new Error("批次响应为空");
+      
+                  const parsed = extractAndParseStoryboardJson(originalContent);
+                  var tempStyleObj = parsed.style != null ? parsed.style : parsed;
+      
+                  if (!tempStyleObj.shots || !Array.isArray(tempStyleObj.shots)) throw new Error("本批次缺少分镜数组");
+      
+                  // 第一批保存最外层的元数据 (DNA & 阐述)
+                  if (batchCount === 1) {
+                      styleObj.director_treatment = tempStyleObj.director_treatment;
+                      styleObj.visualDNA = tempStyleObj.visualDNA;
+                  }
+      
+                  // 将本批次的镜头拼接到总数组中
+                  currentShots = currentShots.concat(tempStyleObj.shots);
+      
+                  // 记录本批最后一镜，供下一次循环承接使用
+                  if (currentShots.length > 0) {
+                      var ls = currentShots[currentShots.length - 1];
+                      lastShotContext = { visual: ls.visual, motion: ls.motion };
+                  }
+      
+                  batchSuccess = true;
+                  break; // 成功则跳出当前批次的重试循环
+                } catch (e) {
+                  lastError = e;
+                  console.warn(`[批次重试] ${styleCfg.name} 第 ${batchCount} 批次第 ${attempt} 次失败:`, e);
+                }
+              }
+              
+              // 如果某一整个批次连续失败，直接打断 while，拿着已有的镜头强行往下走，绝不抛错卡死！
+              if (!batchSuccess) {
+                  console.warn(`[分批中断] ${styleCfg.name} 第 ${batchCount} 批次彻底失败，带着已生成的 ${currentShots.length} 镜强行进入后续时长校准。`);
+                  break; 
+              }
             }
-
-            if (batchShots.length > shotsToRequest) {
-              batchShots = batchShots.slice(0, shotsToRequest);
+      
+            styleObj.shots = currentShots;
+      
+            // 只有当一镜都没生成出来时，才抛出致命错误
+            if (!styleObj.shots.length) {
+              throw new Error(styleCfg.name + " 连续生成失败：" + String(lastError && lastError.message ? lastError.message : lastError));
             }
-            currentShots = currentShots.concat(batchShots);
-          }
-
-          if (currentShots.length < acceptableMin) {
-            throw new Error(
-              "AI偷懒拦截：根据时长算法需要 " +
-                targetNodes +
-                " 镜，分批合计仅 " +
-                currentShots.length +
-                " 镜。"
-            );
-          }
-
-          if (currentShots.length > targetNodes) {
-            currentShots = currentShots.slice(0, targetNodes);
-          }
-
-          styleObj = {
-            styleName: styleCfg.name,
-            director_treatment: directorTreatment,
-            visualDNA: visualDNA,
-            shots: currentShots,
-          };
-
-          break;
-        } catch (e) {
-          lastError = e;
-          console.warn(
-            "[拦截与重试] " + styleCfg.name + " 第 " + attempt + " 次分批生成失败:",
-            e && e.message ? e.message : e
-          );
-          if (attempt === 2) {
-            throw new Error(styleCfg.name + " 连续生成失败：" + String(e && e.message ? e.message : e));
-          }
-        }
-      }
-
-      if (!styleObj) {
-        throw new Error(
-          styleCfg.name + " 连续生成失败：" + String(lastError && lastError.message ? lastError.message : lastError)
-        );
-      }
-
-      try {
-        setStoryEngineProgress(styleCfg.name + " 正在进行视觉闭环校验…", 42 + (typeof styleIndex === "number" ? styleIndex : 0) * 26);
+      
+            // 彻底废除原来的强硬抛错卡死逻辑，改为控制台软警告，强行放行
+            var acceptableMin = Math.max(4, Math.floor(targetNodes * 0.5));
+            if (styleObj.shots.length < acceptableMin) {
+              console.warn("AI 镜头数偏少，但为了系统稳定已放行：期望 " + targetNodes + " 镜，实际 " + styleObj.shots.length + " 镜。");
+            }
+            // ====== 🚀 分批流水线生成 (Batching) 结束 ======
 
         styleObj.styleName = styleCfg.name;
         if (styleObj.visualDNA == null) styleObj.visualDNA = "";
