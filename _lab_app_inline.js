@@ -1018,25 +1018,34 @@
       var drift = roundDurD(goal - tot);
       if (shots.length && Math.abs(drift) >= 0.005) {
         var minAllowed = 0.5;
-        if (drift > 0) {
-          for (i = shots.length - 1; i >= 0 && drift >= 0.005; i--) {
-            var cur = parseFloat(shots[i].duration) || 0;
-            var maxAllowed = shotMaxDurationCap(shots[i]);
-            var headroom = Math.max(0, roundDurD(maxAllowed - cur));
-            if (headroom <= 0) continue;
-            var add = drift <= headroom ? drift : headroom;
-            shots[i].duration = roundDurD(cur + add);
-            drift = roundDurD(drift - add);
+        var maxPasses = 10;
+        var passes = 0;
+        var lastDrift = drift;
+
+        while (Math.abs(drift) >= 0.005 && passes < maxPasses) {
+          if (drift > 0) {
+            for (i = shots.length - 1; i >= 0 && drift >= 0.005; i--) {
+              var cur = parseFloat(shots[i].duration) || 0;
+              var maxAllowed = shotMaxDurationCap(shots[i]);
+              var headroom = Math.max(0, roundDurD(maxAllowed - cur));
+              if (headroom <= 0) continue;
+              var add = drift <= headroom ? drift : headroom;
+              shots[i].duration = roundDurD(cur + add);
+              drift = roundDurD(drift - add);
+            }
+          } else {
+            for (i = shots.length - 1; i >= 0 && drift <= -0.005; i--) {
+              var cur2 = parseFloat(shots[i].duration) || 0;
+              var slack = Math.max(0, roundDurD(cur2 - minAllowed));
+              if (slack <= 0) continue;
+              var sub = -drift <= slack ? -drift : slack;
+              shots[i].duration = roundDurD(cur2 - sub);
+              drift = roundDurD(drift + sub);
+            }
           }
-        } else {
-          for (i = shots.length - 1; i >= 0 && drift <= -0.005; i--) {
-            var cur2 = parseFloat(shots[i].duration) || 0;
-            var slack = Math.max(0, roundDurD(cur2 - minAllowed));
-            if (slack <= 0) continue;
-            var sub = -drift <= slack ? -drift : slack;
-            shots[i].duration = roundDurD(cur2 - sub);
-            drift = roundDurD(drift + sub);
-          }
+          if (lastDrift === drift) break;
+          lastDrift = drift;
+          passes++;
         }
       }
 
@@ -1315,6 +1324,7 @@ ${dynamicPacingBlock}
       var lastError = null;
       var styleObj = { shots: [] };
       var originalContent = "";
+      var fullContentLogs = [];
 
       // ====== 🚀 分批流水线生成 (Batching) 开始 ======
       var currentShots = [];
@@ -1374,8 +1384,16 @@ ${dynamicPacingBlock}
             });
 
             const data = await res.json();
-            originalContent = String(data?.choices?.[0]?.message?.content || "");
+            originalContent = String(
+              (data &&
+                data.choices &&
+                data.choices[0] &&
+                data.choices[0].message &&
+                data.choices[0].message.content) ||
+                ""
+            );
             if (!originalContent.trim()) throw new Error("批次响应为空");
+            fullContentLogs.push(originalContent);
 
             const parsed = extractAndParseStoryboardJson(originalContent);
             var tempStyleObj = parsed.style != null ? parsed.style : parsed;
@@ -1478,8 +1496,16 @@ ${dynamicPacingBlock}
         return styleObj;
       } catch (e) {
         console.error("导演纠偏 - " + styleCfg.name + " 解析/校验异常:", e);
-        console.error("导演纠偏 - " + styleCfg.name + " 原始 content（完整）:", originalContent);
-        console.error("导演纠偏 - " + styleCfg.name + " 提取尝试片段:", extractOutermostJsonBlock(originalContent));
+        console.error(
+          "导演纠偏 - " + styleCfg.name + " 原始 content（完整多批次记录）:",
+          fullContentLogs.join("\n\n--- 批次分割线 ---\n\n")
+        );
+        var lastAttemptContent =
+          fullContentLogs.length > 0 ? fullContentLogs[fullContentLogs.length - 1] : originalContent;
+        console.error(
+          "导演纠偏 - " + styleCfg.name + " 提取尝试片段(最后一批):",
+          extractOutermostJsonBlock(lastAttemptContent)
+        );
         if (e instanceof Error && e.message) {
           throw e;
         }
@@ -2076,7 +2102,14 @@ ${dynamicPacingBlock}
     });
 
     const data = await res.json();
-    const originalContent = String(data?.choices?.[0]?.message?.content || "");
+    const originalContent = String(
+      (data &&
+        data.choices &&
+        data.choices[0] &&
+        data.choices[0].message &&
+        data.choices[0].message.content) ||
+        ""
+    );
     if (!originalContent.trim()) throw new Error("精修响应为空");
     const parsed = extractAndParseStoryboardJson(originalContent);
     const obj = parsed.style != null ? parsed.style : parsed;

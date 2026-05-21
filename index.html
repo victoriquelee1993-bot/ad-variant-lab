@@ -2337,7 +2337,8 @@
           console.log("[Brief] PPTX ArrayBuffer 字节:", tag, buf && buf.byteLength != null ? buf.byteLength : 0);
           var zip;
           try {
-            zip = await JSZip.loadAsync(buf);
+            zip = new JSZip();
+            await zip.loadAsync(buf);
           } catch (eZip) {
             console.error("[Brief] PPTX JSZip.loadAsync（已降级为空）:", tag, eZip);
             return "";
