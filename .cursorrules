@@ -64,8 +64,10 @@ Style detection in code: `styleCfg.id` (`"A"`|`"B"`|`"C"`), `isStyleCFastCut(sty
 
 ### LLM prompt: `dynamicPacingBlock` in `craftSingleStyle`
 
-- **Tiered shot matrix**: `theoreticalShots = ceil(targetMax / avgShotLen)` → `targetNodes` on ladder **4 / 9 / 16 / 25** (stack +4/+9/+16/+25 for ultra-long); prompt requires **exactly `targetNodes` shots** in JSON.
-- **Retry gate**: `acceptableMin = max(4, floor(targetNodes * 0.75))` — 25% slack; duration calibration handles the rest.
+- **Duration-driven shot count**: `targetNodes = ceil(targetMax / idealShotSec)`; Style C uses `idealShotSec=1.8`, `max(…, ceil(targetMax/2))`, single-shot cap **2.5s** in prompt + `clampShotDurationsToWindow`.
+- **Retry gate**: `acceptableMin = max(4, floor(targetNodes * 0.75))`; Style C total below `targetMin` after clamp → throw (cannot stretch shots past 2.5s).
+- **JSON parse**: `extractAndParseStoryboardJson` (regex + `JSON.parse` + trailing-comma fix); `parseJsonWithClosingBraceRepair` only as fallback.
+- **Visual refs**: LLM sets `source_image_id` only; `applyStoryboardVisualRewrites` strips grid text from `visual` and appends `(参考素材格 #k)` from ID.
 - **4 / 9 / 16 / 25 grid arrays** in `visual` when per-shot duration would still overflow:
   - Moderate density → 4 or 9-grid in one `visual`
   - Long targets (>45s) + fast platforms → 16 or 25-grid; stack 4/9 on adjacent shots if needed

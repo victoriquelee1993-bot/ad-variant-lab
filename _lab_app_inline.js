@@ -542,7 +542,26 @@
     if (host) host.remove();
   }
 
-  /** 终极智能补全：支持对象 {} 和 数组 [] 混合嵌套精准修复 */
+  /** 结构化提取 + JSON.parse；失败时再试尾逗号修复与括号补全兜底 */
+  function extractAndParseStoryboardJson(raw) {
+    var s = String(raw == null ? "" : raw)
+      .replace(/```json\s*|```/gi, "")
+      .trim();
+    var jsonMatch = s.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("AI 返回了非 JSON 格式的废话");
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      var repaired = jsonMatch[0].replace(/,\s*([\]}])/g, "$1");
+      try {
+        return JSON.parse(repaired);
+      } catch (e2) {
+        return parseJsonWithClosingBraceRepair(jsonMatch[0]);
+      }
+    }
+  }
+
+  /** 终极智能补全：支持对象 {} 和 数组 [] 混合嵌套精准修复（仅作兜底） */
   function parseJsonWithClosingBraceRepair(slice) {
     var s = String(slice || "").trim();
     if (!s) throw new Error("空 JSON 片段");
@@ -860,7 +879,7 @@
 
     function isStyleCFastCut(styleOpts) {
       if (!styleOpts) return false;
-      if (styleOpts.styleId === "C") return true;
+      if (styleOpts.id === "C" || styleOpts.styleId === "C") return true;
       var nm = String(styleOpts.styleName || styleOpts.name || "");
       return /style\s*c\b/i.test(nm);
     }
@@ -931,8 +950,19 @@
       if (rawSum < 1e-6) {
         var mid0 = roundDurD((lo + hi) / 2);
         var per0 = Math.max(0.25, roundDurD(mid0 / shots.length));
+        if (styleC && per0 > 2.5) per0 = 2.5;
         for (i = 0; i < shots.length; i++) shots[i].duration = per0;
         stripWeights();
+        if (styleC) {
+          var totEmpty = 0;
+          for (i = 0; i < shots.length; i++) totEmpty += parseFloat(shots[i].duration) || 0;
+          if (roundDurD(totEmpty) < lo - 0.02) {
+            throw new Error(
+              "Style C 镜头时长过短且无法通过补镜达到时长下限，请在修改意见中要求 AI 增加「视觉奇观」类镜头以填补时长。"
+            );
+          }
+        }
+        if (styleC) assertStyleCShotDurationLimit(shots, "校准后");
         return;
       }
 
@@ -980,6 +1010,15 @@
       }
 
       if (styleC) assertStyleCShotDurationLimit(shots, "校准后");
+
+      var totFinal = 0;
+      for (i = 0; i < shots.length; i++) totFinal += parseFloat(shots[i].duration) || 0;
+      totFinal = roundDurD(totFinal);
+      if (styleC && totFinal < lo - 0.02) {
+        throw new Error(
+          "Style C 镜头时长过短且无法通过补镜达到时长下限，请在修改意见中要求 AI 增加「视觉奇观」类镜头以填补时长。"
+        );
+      }
     }
 
     /**
@@ -995,39 +1034,17 @@
 
       for (var i = 0; i < shots.length; i++) {
         if (!shots[i]) continue;
-        var decShot = shots[i].source_image_id != null;
-        var vis = decShot
-          ? stripSystemTokensFromVisual(shots[i].visual || "")
-          : String(shots[i].visual || "");
+        var vis = stripSystemTokensFromVisual(String(shots[i].visual || ""));
+        vis = vis.replace(GRID_REF_REPLACE_G, function () {
+          return "";
+        });
+        vis = vis.replace(/参考素材格[^)]*\)/g, "");
+        vis = collapseSpaces(vis);
 
-        var sid = shots[i].source_image_id;
-        var kFromSid = parseInt(sid, 10);
-        var m = vis.match(GRID_REF_RE);
-        var k = m ? parseInt(m[1], 10) : NaN;
-
-        if (!decShot) {
-          vis = vis.replace(GRID_REF_REPLACE_G, function (_full, num) {
-            var kk = parseInt(num, 10);
-            if (!galleryCount) return "(参考素材格：无)";
-            if (isNaN(kk) || kk < 1 || kk > galleryCount) return "(参考素材格 #1)";
-            return "(参考素材格 #" + kk + ")";
-          });
-          m = vis.match(GRID_REF_RE);
-          k = m ? parseInt(m[1], 10) : NaN;
-        } else {
-          if (!isNaN(kFromSid) && kFromSid >= 1) k = kFromSid;
-          else if (isNaN(k) || k < 1) k = 1;
-          if (m || vis.indexOf("参考素材格") !== -1) {
-            vis = vis.replace(GRID_REF_REPLACE_G, function () {
-              return "";
-            });
-            vis = collapseSpaces(vis);
-          }
-        }
-
-
+        var k = parseInt(shots[i].source_image_id, 10);
+        if (isNaN(k) || k < 1) k = 1;
         if (galleryCount && k > galleryCount) k = galleryCount;
-        if (galleryCount && (isNaN(k) || k < 1)) k = 1;
+        if (!galleryCount) k = 1;
 
         var meta = galleryCount > 0 ? getGalleryCellMeta(k - 1) : null;
         var clsRaw = meta ? meta.className : "";
@@ -1129,7 +1146,8 @@
 
       var platformStr = String(p.platform || "");
       var isShortVideo = /TikTok|Reels|Shorts|小红书|Instagram/.test(platformStr);
-      var avgShotLen = isShortVideo ? 1.5 : 3.5;
+      var isStyleC = isStyleCFastCut(styleCfg);
+      var avgShotLen = isShortVideo || isStyleC ? 1.5 : 3.5;
       var theoreticalShots = Math.ceil(targetMax / avgShotLen);
 
       var targetNodes = 4;
@@ -1167,8 +1185,8 @@
         targetNodes +
         "）！这是基于 4/9/16/25 阶梯矩阵推算出的最佳剪辑密度，禁止多写或少写。\n" +
         "🔥【全平台通用法则】：前 3 秒（第 1 镜或前 2 镜）必须是极具视觉冲击力的 Hook！\n" +
-        (isShortVideo
-          ? "👉 【短视频法则】：单镜严禁超过 2.5 秒，用 " +
+        (isShortVideo || isStyleC
+          ? "👉 【短视频/Style C 法则】：单镜严禁超过 2.5 秒，用 " +
             targetNodes +
             " 镜的高频切换填满总时长。"
           : "👉 【传统/电商法则】：必须严格分配 " +
@@ -1191,9 +1209,10 @@
 【输出格式】：只输出合法 JSON，visual 描述必须是充满镜头感的纯中文，严禁含糊其辞。第 1 镜须直接呈现产品本体或可读的局部核心（禁止纯人物/纯风景无产品前摇）。
 ${buildUniversalBindingPromptBlock(catalogSlotCount)}
 ${dynamicPacingBlock}
-【物理算数死命令】：所有镜头的 duration 累加总和必须严格落在 ${targetMin}-${targetMax} 秒之间！单镜时长由投放平台节奏与 4/9/16/25 宫格阵列策略动态决定；宫格阵列镜可分配更长 duration 吸收总长，绝不允许用少量呆板匀速单镜糊弄总长！
-【技术铁律·解析兼容】顶层含字符串 director_treatment、visualDNA（必填：顶级英文 DALL-E 生图 Prompt，精确描述产品外观材质与型号细节）与数组 shots；每镜须含 source_image_id（整数）、matching_reason（景别匹配理由，一句中文）、duration（代表绝对物理秒数，数字格式如1.5、2.0）、visual、motion。严禁输出 duration_weight！
-visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
+【物理算数死命令】：所有镜头的 duration 累加总和必须严格落在 ${targetMin}-${targetMax} 秒之间！${isStyleC ? "Style C 单镜 duration 不得超过 2.5s，须用足够镜头数填满总长。" : "非 Style C 可用宫格分屏阵列镜分配较长 duration 吸收总长，禁止少量呆板单镜糊弄。"}
+【技术铁律·解析兼容】顶层含字符串 director_treatment、visualDNA（必填：顶级英文 DALL-E 生图 Prompt）与数组 shots；每镜须含 source_image_id（整数）、matching_reason、duration（物理秒数）、visual（纯中文画面，不含素材格引用）、motion。严禁 duration_weight！
+【输出格式要求】：shots 中 source_image_id 必须为整数；不要在 visual 内写任何参考图/素材格描述，引用由后期脚本自动挂载。若 JSON 无法闭合，请在末尾补全所有闭合符号，严禁省略。
+只输出合法 JSON，严禁 markdown 包裹。`;
 
       var userTextBlock =
         "【投放平台】：" +
@@ -1261,10 +1280,7 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
           originalContent = String(data?.choices?.[0]?.message?.content || "");
           if (!originalContent.trim()) throw new Error(styleCfg.name + " 响应为空");
 
-          var jsonSlice = extractOutermostJsonBlock(originalContent);
-          if (!jsonSlice) throw new Error("无效的 JSON 格式（无法提取最外层对象）");
-
-          const parsed = parseJsonWithClosingBraceRepair(jsonSlice);
+          const parsed = extractAndParseStoryboardJson(originalContent);
           styleObj = parsed.style != null ? parsed.style : parsed;
 
           if (!styleObj.shots || !Array.isArray(styleObj.shots)) throw new Error("缺少分镜数组");
@@ -1867,9 +1883,7 @@ visual 中严禁出现「#数字」「素材格」等系统级词汇。`;
     const data = await res.json();
     const originalContent = String(data?.choices?.[0]?.message?.content || "");
     if (!originalContent.trim()) throw new Error("精修响应为空");
-    const jsonSlice = extractOutermostJsonBlock(originalContent);
-    if (!jsonSlice) throw new Error("无效的 JSON 格式（无法提取精修对象）");
-    const parsed = parseJsonWithClosingBraceRepair(jsonSlice);
+    const parsed = extractAndParseStoryboardJson(originalContent);
     const obj = parsed.style != null ? parsed.style : parsed;
     if (obj && original && original.styleName != null && obj.styleName == null) {
       obj.styleName = original.styleName;
