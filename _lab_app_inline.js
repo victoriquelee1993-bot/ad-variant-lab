@@ -1189,7 +1189,6 @@
       void styleObj;
       void styleCfg;
     }
-
     const craftSingleStyle = async function (styleCfg, styleIndex) {
       var minEl = document.getElementById("totalSecMin");
       var maxEl = document.getElementById("totalSecMax");
@@ -1302,164 +1301,114 @@ ${dynamicPacingBlock}
         styleCfg.name +
         "】\n" +
         styleCfg.focus +
-        "\n\n指令：请仔细观察提供的产品图，结合卖点、品类和平台特性设计分镜。强制要求：1. 严格遵守动态推演的风格设定。2. 在 `visualDNA` 中输出一段【顶级英文 DALL-E 生图 Prompt】。3. 每镜 source_image_id 必须与画面语义和素材目录一致。\n" +
+        "\n\n指令：请仔细观察提供的产品图，结合卖点、品类和平台特性设计分镜。强制要求：1. 严格遵守动态推演的风格设定。2. 在 \`visualDNA\` 中输出一段【顶级英文 DALL-E 生图 Prompt】。3. 每镜 source_image_id 必须与画面语义和素材目录一致。\n" +
         gridHint;
 
+      var userContent = [{ type: "text", text: userTextBlock }];
+      base64Images.forEach(function (b64) {
+        userContent.push({ type: "image_url", image_url: { url: b64, detail: "high" } });
+      });
+
       var lastError = null;
-      var styleObj = null;
+      var styleObj = { shots: [] };
       var originalContent = "";
-      var acceptableMin = Math.max(4, Math.floor(targetNodes * 0.75));
-      if (isStyleC) acceptableMin = Math.max(acceptableMin, minShotsPhysics);
-      var batchSize = 12;
 
-      for (var attempt = 1; attempt <= 2; attempt++) {
-        try {
-          if (attempt > 1) {
-            setStoryEngineProgress(
-              styleCfg.name + " 分批生成不达标，正在重试 (尝试 " + attempt + "/2)...",
-              10 + attempt * 20
-            );
+      // ====== 🚀 分批流水线生成 (Batching) 开始 ======
+      var currentShots = [];
+      var batchSize = 12; // 绝对安全区：每次最多逼 AI 吐 12 镜，防断流
+      var batchCount = 0;
+      var maxBatches = Math.ceil(targetNodes / batchSize) + 1; // 防死循环兜底
+      var lastShotContext = null;
+
+      while (currentShots.length < targetNodes && batchCount < maxBatches) {
+        batchCount++;
+        var shotsToRequest = Math.min(batchSize, targetNodes - currentShots.length);
+
+        setStoryEngineProgress(
+          styleCfg.name + " 正在分批生成 (第 " + batchCount + " 批)... 已完成 " + currentShots.length + "/" + targetNodes + " 镜", 
+          10 + (currentShots.length / targetNodes) * 30
+        );
+
+        // 动态构建当前批次的系统 Prompt
+        var currentSystemPrompt = systemPrompt;
+        if (batchCount > 1 && lastShotContext) {
+           currentSystemPrompt += `\n\n【分批串联死命令】：这是第 ${batchCount} 批请求，请接着上一批继续写！你本次只需输出 ${shotsToRequest} 个镜头。上一镜（第${currentShots.length}镜）画面是：“${lastShotContext.visual}”，动作是：“${lastShotContext.motion}”。请确保本批次第 1 镜与上一镜在动作和空间上完美衔接！`;
+        }
+
+        var batchSuccess = false;
+        // 每批次最多允许重试 2 次
+        for (var attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const res = await llmApiFetch("chat/completions", {
+              label: styleCfg.name + " 分镜 (批次 " + batchCount + ")",
+              apiKey: key,
+              body: JSON.stringify({
+                model: window.getTextModel(),
+                max_tokens: 8192,
+                temperature: attempt === 1 ? 0.1 : 0.3,
+                messages: [
+                  { role: "system", content: currentSystemPrompt },
+                  { role: "user", content: userContent },
+                ],
+                response_format: { type: "json_object" },
+              }),
+            });
+
+            const data = await res.json();
+            originalContent = String(data?.choices?.[0]?.message?.content || "");
+            if (!originalContent.trim()) throw new Error("批次响应为空");
+
+            const parsed = extractAndParseStoryboardJson(originalContent);
+            var tempStyleObj = parsed.style != null ? parsed.style : parsed;
+
+            if (!tempStyleObj.shots || !Array.isArray(tempStyleObj.shots)) throw new Error("本批次缺少分镜数组");
+
+            // 第一批保存最外层的元数据 (DNA & 阐述)
+            if (batchCount === 1) {
+                styleObj.director_treatment = tempStyleObj.director_treatment;
+                styleObj.visualDNA = tempStyleObj.visualDNA;
+            }
+
+            // 将本批次的镜头拼接到总数组中
+            currentShots = currentShots.concat(tempStyleObj.shots);
+
+            // 记录本批最后一镜，供下一次循环承接使用
+            if (currentShots.length > 0) {
+                var ls = currentShots[currentShots.length - 1];
+                lastShotContext = { visual: ls.visual, motion: ls.motion };
+            }
+
+            batchSuccess = true;
+            break; // 成功则跳出当前批次的重试循环
+          } catch (e) {
+            lastError = e;
+            console.warn(`[批次重试] ${styleCfg.name} 第 ${batchCount} 批次第 ${attempt} 次失败:`, e);
           }
+        }
+        
+        // 如果某一整个批次连续失败，直接打断 while，拿着已有的镜头强行往下走，绝不抛错卡死！
+        if (!batchSuccess) {
+            console.warn(`[分批中断] ${styleCfg.name} 第 ${batchCount} 批次彻底失败，带着已生成的 ${currentShots.length} 镜强行进入后续时长校准。`);
+            break; 
+        }
+      }
 
-          var currentShots = [];
-          var directorTreatment = "";
-          var visualDNA = "";
+      styleObj.shots = currentShots;
 
-          while (currentShots.length < targetNodes) {
-            var shotsToRequest = Math.min(batchSize, targetNodes - currentShots.length);
-            var batchPct =
-              12 +
-              (typeof styleIndex === "number" ? styleIndex : 0) * 28 +
-              Math.round((currentShots.length / targetNodes) * 55);
-            setStoryEngineProgress(
-              styleCfg.name +
-                " 分批生成中… (已完成 " +
-                currentShots.length +
-                "/" +
-                targetNodes +
-                " 镜)",
-              batchPct
-            );
+      // 只有当一镜都没生成出来时，才抛出致命错误
+      if (!styleObj.shots.length) {
+        throw new Error(styleCfg.name + " 连续生成失败：" + String(lastError && lastError.message ? lastError.message : lastError));
+      }
 
-            var batchPacingAddendum =
-              "\n\n【本分镜批次任务】你这次必须严格输出 " +
-              shotsToRequest +
-              " 个镜头（shots 数组长度必须等于 " +
-              shotsToRequest +
-              "）。全片目标总镜数为 " +
-              targetNodes +
-              "，当前已完成 " +
-              currentShots.length +
-              " 镜。";
-            if (currentShots.length === 0) {
-              batchPacingAddendum +=
-                " 这是第 1 批：须输出 director_treatment、visualDNA 与 shots。";
-            } else {
-              var lastShot = currentShots[currentShots.length - 1];
-              batchPacingAddendum +=
-                "\n注意，上一镜的画面是：" +
-                String(lastShot.visual || "") +
-                "，动作是：" +
-                String(lastShot.motion || "") +
-                "。请确保本批次第 1 镜与它完美衔接。续写批可仅返回 shots，或与首批相同 JSON 顶层字段。";
-            }
-            var lastError = null;
-            var styleObj = { shots: [] };
-            var originalContent = "";
-      
-            // ====== 🚀 分批流水线生成 (Batching) 开始 ======
-            var currentShots = [];
-            var batchSize = 12; // 绝对安全区：每次最多逼 AI 吐 12 镜，防断流
-            var batchCount = 0;
-            var maxBatches = Math.ceil(targetNodes / batchSize) + 1; // 防死循环兜底
-            var lastShotContext = null;
-      
-            while (currentShots.length < targetNodes && batchCount < maxBatches) {
-              batchCount++;
-              var shotsToRequest = Math.min(batchSize, targetNodes - currentShots.length);
-      
-              setStoryEngineProgress(
-                styleCfg.name + " 正在分批生成 (第 " + batchCount + " 批)... 已完成 " + currentShots.length + "/" + targetNodes + " 镜", 
-                10 + (currentShots.length / targetNodes) * 30
-              );
-      
-              // 动态构建当前批次的系统 Prompt
-              var currentSystemPrompt = systemPrompt;
-              if (batchCount > 1 && lastShotContext) {
-                 currentSystemPrompt += `\n\n【分批串联死命令】：这是第 ${batchCount} 批请求，请接着上一批继续写！你本次只需输出 ${shotsToRequest} 个镜头。上一镜（第${currentShots.length}镜）画面是：“${lastShotContext.visual}”，动作是：“${lastShotContext.motion}”。请确保本批次第 1 镜与上一镜在动作和空间上完美衔接！`;
-              }
-      
-              var batchSuccess = false;
-              // 每批次最多允许重试 2 次
-              for (var attempt = 1; attempt <= 2; attempt++) {
-                try {
-                  const res = await llmApiFetch("chat/completions", {
-                    label: styleCfg.name + " 分镜 (批次 " + batchCount + ")",
-                    apiKey: key,
-                    body: JSON.stringify({
-                      model: window.getTextModel(),
-                      max_tokens: 8192,
-                      temperature: attempt === 1 ? 0.1 : 0.3,
-                      messages: [
-                        { role: "system", content: currentSystemPrompt },
-                        { role: "user", content: userContent },
-                      ],
-                      response_format: { type: "json_object" },
-                    }),
-                  });
-      
-                  const data = await res.json();
-                  originalContent = String(data?.choices?.[0]?.message?.content || "");
-                  if (!originalContent.trim()) throw new Error("批次响应为空");
-      
-                  const parsed = extractAndParseStoryboardJson(originalContent);
-                  var tempStyleObj = parsed.style != null ? parsed.style : parsed;
-      
-                  if (!tempStyleObj.shots || !Array.isArray(tempStyleObj.shots)) throw new Error("本批次缺少分镜数组");
-      
-                  // 第一批保存最外层的元数据 (DNA & 阐述)
-                  if (batchCount === 1) {
-                      styleObj.director_treatment = tempStyleObj.director_treatment;
-                      styleObj.visualDNA = tempStyleObj.visualDNA;
-                  }
-      
-                  // 将本批次的镜头拼接到总数组中
-                  currentShots = currentShots.concat(tempStyleObj.shots);
-      
-                  // 记录本批最后一镜，供下一次循环承接使用
-                  if (currentShots.length > 0) {
-                      var ls = currentShots[currentShots.length - 1];
-                      lastShotContext = { visual: ls.visual, motion: ls.motion };
-                  }
-      
-                  batchSuccess = true;
-                  break; // 成功则跳出当前批次的重试循环
-                } catch (e) {
-                  lastError = e;
-                  console.warn(`[批次重试] ${styleCfg.name} 第 ${batchCount} 批次第 ${attempt} 次失败:`, e);
-                }
-              }
-              
-              // 如果某一整个批次连续失败，直接打断 while，拿着已有的镜头强行往下走，绝不抛错卡死！
-              if (!batchSuccess) {
-                  console.warn(`[分批中断] ${styleCfg.name} 第 ${batchCount} 批次彻底失败，带着已生成的 ${currentShots.length} 镜强行进入后续时长校准。`);
-                  break; 
-              }
-            }
-      
-            styleObj.shots = currentShots;
-      
-            // 只有当一镜都没生成出来时，才抛出致命错误
-            if (!styleObj.shots.length) {
-              throw new Error(styleCfg.name + " 连续生成失败：" + String(lastError && lastError.message ? lastError.message : lastError));
-            }
-      
-            // 彻底废除原来的强硬抛错卡死逻辑，改为控制台软警告，强行放行
-            var acceptableMin = Math.max(4, Math.floor(targetNodes * 0.5));
-            if (styleObj.shots.length < acceptableMin) {
-              console.warn("AI 镜头数偏少，但为了系统稳定已放行：期望 " + targetNodes + " 镜，实际 " + styleObj.shots.length + " 镜。");
-            }
-            // ====== 🚀 分批流水线生成 (Batching) 结束 ======
+      // 彻底废除原来的强硬抛错卡死逻辑，改为控制台软警告，强行放行
+      var acceptableMin = Math.max(4, Math.floor(targetNodes * 0.5));
+      if (styleObj.shots.length < acceptableMin) {
+        console.warn("AI 镜头数偏少，但为了系统稳定已放行：期望 " + targetNodes + " 镜，实际 " + styleObj.shots.length + " 镜。");
+      }
+      // ====== 🚀 分批流水线生成 (Batching) 结束 ======
+
+      try {
+        setStoryEngineProgress(styleCfg.name + " 正在进行视觉闭环校验…", 42 + (typeof styleIndex === "number" ? styleIndex : 0) * 26);
 
         styleObj.styleName = styleCfg.name;
         if (styleObj.visualDNA == null) styleObj.visualDNA = "";
@@ -1518,7 +1467,6 @@ ${dynamicPacingBlock}
         throw new Error(styleCfg.name + " 发生未知错误：" + String(e));
       }
     };
-
     function sleep(ms) {
       return new Promise(function (resolve) {
         setTimeout(resolve, ms);
