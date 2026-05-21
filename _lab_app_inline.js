@@ -1941,6 +1941,8 @@ ${dynamicPacingBlock}
     if (firstPanel) firstPanel.classList.add("is-active");
 
     dashboard.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    bindStoryboardTabHandlers();
   }
 
   /** 渐进式渲染：仅替换 panel-{sIdx} 内容，不清空 panels 容器 */
@@ -2314,7 +2316,6 @@ ${dynamicPacingBlock}
       })
       .catch(function (err) {
         console.error("AI 生图失败:", err);
-        maybeAlertLlmFetchFailure(err, "DALL-E 生图");
         var hint = formatLlmFetchAlertMessage(err, "DALL-E 生图");
         var bodyHtml =
           "生图失败:<br>" +
