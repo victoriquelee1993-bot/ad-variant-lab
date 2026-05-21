@@ -374,7 +374,11 @@
         const data = await res.json();
         if (!data.choices || !data.choices[0]) throw new Error("视觉分析响应为空");
 
-        const parsed = JSON.parse(data.choices[0].message.content);
+        const rawContent = String(data.choices[0].message.content)
+          .replace(/```json\s*|```/gi, "")
+          .trim();
+        const parsed = JSON.parse(rawContent);
+
         if (!masterPrompt && parsed.master_prompt) masterPrompt = parsed.master_prompt;
 
         const batchImages =
@@ -2342,9 +2346,15 @@ ${dynamicPacingBlock}
       md += "| :--- | :--- | :--- | :--- | :--- |\n";
 
       style.shots.forEach(function (shot, i) {
-        var visual = String(shot.visual || "").replace(/\n/g, " ");
-        var motion = String(shot.motion || "").replace(/\n/g, " ");
-        var audio = String(shot.audio || "").replace(/\n/g, " ");
+        var visual = String(shot.visual || "")
+          .replace(/\n/g, " ")
+          .replace(/\|/g, "｜");
+        var motion = String(shot.motion || "")
+          .replace(/\n/g, " ")
+          .replace(/\|/g, "｜");
+        var audio = String(shot.audio || "")
+          .replace(/\n/g, " ")
+          .replace(/\|/g, "｜");
         var duration = shot.duration != null ? shot.duration : "-";
 
         md +=
