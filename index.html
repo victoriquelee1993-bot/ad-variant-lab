@@ -2054,6 +2054,8 @@
       }
 
       var LAB_BUSY_PARSE_LABEL = "AI 大脑正在深度审片中，请稍候...";
+      var LAB_BUSY_OCR_INIT_LABEL =
+        "正在加载离线 OCR 引擎(首次需下载语言包，请耐心等待)…";
 
       function setLabBusy(on) {
         var el = document.getElementById("labBusyOverlay");
@@ -2428,15 +2430,16 @@
           );
           try {
             briefOcrWorker = await briefRaceWithTimeout(
-              Tesseract.createWorker("chi_sim+eng", 1, {
+              Tesseract.createWorker("eng", 1, {
                 logger: function () {},
               }),
               initMs,
-              "Tesseract.createWorker(chi_sim+eng,fallback)"
+              "Tesseract.createWorker(eng,fallback)"
             );
+            console.warn("[Brief] OCR Worker 已降级为 eng（英文包，体积更小）");
             return briefOcrWorker;
           } catch (eW2) {
-            console.warn("[Brief] OCR Worker 降级仍失败，将尝试 Tesseract.recognize:", eW2);
+            console.warn("[Brief] OCR Worker eng 降级仍失败:", eW2);
             briefOcrWorker = null;
             return null;
           }
@@ -2461,36 +2464,51 @@
           console.warn("[Brief] 当前图片格式跳过 OCR:", tag, ext);
           return "";
         }
-        var waitMs = briefOcrWaitMs(file);
-        waitMs = Math.min(waitMs, 20000); // OCR 识别总时长最多不超过 20 秒，超时直接放弃返回空
-        var initMs = 12000;
-        console.log("[Brief] OCR 最长等待 ms:", tag, waitMs);
+
+        var overlayEl = document.getElementById("labBusyOverlay");
+        var wasBusyBefore = overlayEl && overlayEl.classList.contains("is-visible");
+        var busyLabelEl = overlayEl ? overlayEl.querySelector(".lab-busy-label") : null;
+
         try {
-          await briefRaceWithTimeout(briefEnsureOcrWorker(), initMs, "briefEnsureOcrWorker");
-        } catch (eInit) {
-          console.warn("[Brief] OCR Worker 初始化超时或失败:", tag, eInit);
-          await briefTerminateOcrWorker();
-          throw new Error(
-            "OCR 引擎初始化超时（可能因语言包下载失败）。请改用 PDF/Word 简报，或检查网络后重试。"
-          );
-        }
-        var worker = briefOcrWorker;
-        if (worker && typeof worker.recognize === "function") {
+          setLabBusy(true);
+          if (busyLabelEl) busyLabelEl.textContent = LAB_BUSY_OCR_INIT_LABEL;
+
+          var waitMs = briefOcrWaitMs(file);
+          waitMs = Math.min(waitMs, 20000); // OCR 识别总时长最多不超过 20 秒，超时直接放弃返回空
+          var initMs = 12000;
+          console.log("[Brief] OCR 最长等待 ms:", tag, waitMs);
           try {
-            var r1 = await briefRaceWithTimeout(worker.recognize(file), waitMs, "worker.recognize");
-            var text1 = r1 && r1.data && r1.data.text ? String(r1.data.text).trim() : "";
-            if (text1) return text1;
-          } catch (eR1) {
-            console.warn("[Brief] worker.recognize 失败或超时:", tag, eR1);
+            await briefRaceWithTimeout(briefEnsureOcrWorker(), initMs, "briefEnsureOcrWorker");
+          } catch (eInit) {
+            console.warn("[Brief] OCR Worker 初始化超时或失败:", tag, eInit);
             await briefTerminateOcrWorker();
+            throw new Error(
+              "OCR 引擎初始化超时（可能因语言包下载失败）。请改用 PDF/Word 简报，或检查网络后重试。"
+            );
           }
+
+          if (busyLabelEl) busyLabelEl.textContent = LAB_BUSY_PARSE_LABEL;
+
+          var worker = briefOcrWorker;
+          if (worker && typeof worker.recognize === "function") {
+            try {
+              var r1 = await briefRaceWithTimeout(worker.recognize(file), waitMs, "worker.recognize");
+              var text1 = r1 && r1.data && r1.data.text ? String(r1.data.text).trim() : "";
+              if (text1) return text1;
+            } catch (eR1) {
+              console.warn("[Brief] worker.recognize 失败或超时:", tag, eR1);
+              await briefTerminateOcrWorker();
+            }
+          }
+          throw new Error(
+            "图片 OCR 识别失败或超时（" +
+              tag +
+              "）。请改用 PDF/Word 简报，或稍后重试。"
+          );
+        } finally {
+          if (busyLabelEl) busyLabelEl.textContent = LAB_BUSY_PARSE_LABEL;
+          if (!wasBusyBefore) setLabBusy(false);
         }
-        // 禁止静默降级 Tesseract.recognize：会触发外网 20MB 语言包下载，导致页面长时间假死
-        throw new Error(
-          "图片 OCR 识别失败或超时（" +
-            tag +
-            "）。请改用 PDF/Word 简报，或稍后重试。"
-        );
       }
 
       async function extractDocxWithMammoth(file, label) {

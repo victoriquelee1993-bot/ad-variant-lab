@@ -927,6 +927,15 @@
       var styleC = isStyleCFastCut(styleOpts);
       if (styleC) assertStyleCShotDurationLimit(shots, "校准前");
 
+      var GRID_VISUAL_CAP_RE = /宫格|分屏|阵列/;
+
+      function shotMaxDurationCap(shot) {
+        if (styleC) return 2.5;
+        var vis = String(shot && shot.visual != null ? shot.visual : "");
+        if (GRID_VISUAL_CAP_RE.test(vis)) return hi * 0.5;
+        return 5;
+      }
+
       function stripWeights() {
         for (var si = 0; si < shots.length; si++) {
           if (!shots[si] || !Object.prototype.hasOwnProperty.call(shots[si], "duration_weight")) continue;
@@ -973,11 +982,11 @@
       var goal = rawSum < targetIdeal ? targetIdeal : rawSum > hi + 0.02 ? hi : rawSum;
 
       var tot = 0;
-      var maxPerShot = styleC ? 2.5 : hi * 0.5; // Style C 单镜严禁超过 2.5s；其他风格允许宫格阵列吸收时长
       for (i = 0; i < shots.length; i++) {
         var d = parseFloat(shots[i].duration) || 0;
         var scaled = roundDurD(d * scale);
-        if (scaled > maxPerShot) scaled = maxPerShot;
+        var capI = shotMaxDurationCap(shots[i]);
+        if (scaled > capI) scaled = capI;
         shots[i].duration = scaled;
         tot += shots[i].duration;
       }
@@ -987,11 +996,11 @@
       var drift = roundDurD(goal - tot);
       if (shots.length && Math.abs(drift) >= 0.005) {
         var minAllowed = 0.5;
-        var maxAllowed = maxPerShot;
         if (drift > 0) {
           for (i = shots.length - 1; i >= 0 && drift >= 0.005; i--) {
             var cur = parseFloat(shots[i].duration) || 0;
-            var headroom = maxAllowed === Infinity ? drift : Math.max(0, roundDurD(maxAllowed - cur));
+            var maxAllowed = shotMaxDurationCap(shots[i]);
+            var headroom = Math.max(0, roundDurD(maxAllowed - cur));
             if (headroom <= 0) continue;
             var add = drift <= headroom ? drift : headroom;
             shots[i].duration = roundDurD(cur + add);

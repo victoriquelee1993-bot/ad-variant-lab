@@ -83,7 +83,7 @@ Style detection in code: `styleCfg.id` (`"A"`|`"B"`|`"C"`), `isStyleCFastCut(sty
 ### Post-processing: `clampShotDurationsToWindow`
 
 - **Goal scaling**: `targetIdeal = lo + (hi - lo) * 0.4` — scale toward mid-upper band, **not** the bare minimum `lo` (fixes Style A/B stuck at floor).
-- **Per-shot ceiling**: Style C → `maxPerShot = 2.5`; other styles → `hi * 0.5` so grid/array shots can absorb duration without breaking Style C assert.
+- **Per-shot ceiling** (`shotMaxDurationCap` in `clampShotDurationsToWindow`): Style C → **2.5s** always; non-C with visual matching `宫格|分屏|阵列` → `hi * 0.5`; other non-C shots → **5s** hard cap. Used in scale loop and drift trim per shot.
 - **Floor per shot**: `minAllowed = 0.5` during drift trim.
 - **No `duration_weight`** — strip on write.
 
