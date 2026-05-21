@@ -929,7 +929,28 @@
       }
 
       var styleC = isStyleCFastCut(styleOpts);
+      var STYLE_C_SHOT_CAP_SEC = 2.5;
       if (styleC) assertStyleCShotDurationLimit(shots, "校准前");
+
+      if (styleC) {
+        var styleCMaxTotal = roundDurD(shots.length * STYLE_C_SHOT_CAP_SEC);
+        var minShotsNeeded = Math.ceil(lo / STYLE_C_SHOT_CAP_SEC);
+        if (styleCMaxTotal < lo - 0.02) {
+          throw new Error(
+            "Style C 物理死锁：当前 " +
+              shots.length +
+              " 镜 × " +
+              STYLE_C_SHOT_CAP_SEC +
+              "s 上限 = " +
+              styleCMaxTotal +
+              "s，无法达到目标下限 " +
+              lo +
+              "s。至少需要 " +
+              minShotsNeeded +
+              " 镜。请重新生成分镜（增加镜头数，禁止拉长单镜）。"
+          );
+        }
+      }
 
       var GRID_VISUAL_CAP_RE = /宫格|分屏|阵列/;
 
@@ -961,20 +982,14 @@
       rawSum = roundDurD(rawSum);
 
       if (rawSum < 1e-6) {
-        var mid0 = roundDurD((lo + hi) / 2);
-        var per0 = Math.max(0.25, roundDurD(mid0 / shots.length));
-        if (styleC && per0 > 2.5) per0 = 2.5;
-        for (i = 0; i < shots.length; i++) shots[i].duration = per0;
-        stripWeights();
         if (styleC) {
-          var totEmpty = 0;
-          for (i = 0; i < shots.length; i++) totEmpty += parseFloat(shots[i].duration) || 0;
-          if (roundDurD(totEmpty) < lo - 0.02) {
-            throw new Error(
-              "Style C 镜头时长过短且无法通过补镜达到时长下限，请在修改意见中要求 AI 增加「视觉奇观」类镜头以填补时长。"
-            );
-          }
+          for (i = 0; i < shots.length; i++) shots[i].duration = STYLE_C_SHOT_CAP_SEC;
+        } else {
+          var mid0 = roundDurD((lo + hi) / 2);
+          var per0 = Math.max(0.25, roundDurD(mid0 / shots.length));
+          for (i = 0; i < shots.length; i++) shots[i].duration = per0;
         }
+        stripWeights();
         if (styleC) assertStyleCShotDurationLimit(shots, "校准后");
         return;
       }
@@ -1028,9 +1043,40 @@
       for (i = 0; i < shots.length; i++) totFinal += parseFloat(shots[i].duration) || 0;
       totFinal = roundDurD(totFinal);
       if (styleC && totFinal < lo - 0.02) {
-        throw new Error(
-          "Style C 镜头时长过短且无法通过补镜达到时长下限，请在修改意见中要求 AI 增加「视觉奇观」类镜头以填补时长。"
-        );
+        var capSum = roundDurD(shots.length * STYLE_C_SHOT_CAP_SEC);
+        if (capSum >= lo - 0.02) {
+          for (i = 0; i < shots.length; i++) shots[i].duration = STYLE_C_SHOT_CAP_SEC;
+          totFinal = capSum;
+          if (totFinal > hi + 0.02) {
+            var sc = hi / totFinal;
+            totFinal = 0;
+            for (i = 0; i < shots.length; i++) {
+              shots[i].duration = roundDurD(
+                Math.min(STYLE_C_SHOT_CAP_SEC, (parseFloat(shots[i].duration) || 0) * sc)
+              );
+              totFinal += shots[i].duration;
+            }
+            totFinal = roundDurD(totFinal);
+          }
+        }
+        if (totFinal < lo - 0.02) {
+          throw new Error(
+            "Style C 物理死锁：校准后总长 " +
+              totFinal +
+              "s，低于目标下限 " +
+              lo +
+              "s（" +
+              shots.length +
+              " 镜 × " +
+              STYLE_C_SHOT_CAP_SEC +
+              "s 上限 = " +
+              capSum +
+              "s）。需要至少 " +
+              Math.ceil(lo / STYLE_C_SHOT_CAP_SEC) +
+              " 镜。"
+          );
+        }
+        if (styleC) assertStyleCShotDurationLimit(shots, "校准后");
       }
     }
 
@@ -1180,6 +1226,11 @@
         else targetNodes = 25 + 25;
       }
 
+      var minShotsPhysics = isStyleC ? Math.ceil(targetMin / 2.5) : 0;
+      if (isStyleC && targetNodes < minShotsPhysics) {
+        targetNodes = minShotsPhysics;
+      }
+
       setStoryEngineProgress(
         styleCfg.name + " 正在生成，当前时长匹配目标镜头数: " + targetNodes + " 镜...",
         8 + (typeof styleIndex === "number" ? styleIndex : 0) * 28
@@ -1192,11 +1243,9 @@
         "-" +
         targetMax +
         "s】。\n" +
-        "💥 智能化分镜要求：你本次必须输出【正好 " +
+        "💥 智能化分镜要求：全片共需【" +
         targetNodes +
-        " 个镜头】（即 JSON 数组的长度严格等于 " +
-        targetNodes +
-        "）！这是基于 4/9/16/25 阶梯矩阵推算出的最佳剪辑密度，禁止多写或少写。\n" +
+        " 个镜头】（基于 4/9/16/25 阶梯矩阵推算）。系统将分多批请求你撰写；每批 user 消息会写明本批须输出的镜头数，严禁单批多写或少写。\n" +
         "🔥【全平台通用法则】：前 3 秒（第 1 镜或前 2 镜）必须是极具视觉冲击力的 Hook！\n" +
         (isShortVideo || isStyleC
           ? "👉 【短视频/Style C 法则】：单镜严禁超过 2.5 秒，用 " +
@@ -1256,64 +1305,137 @@ ${dynamicPacingBlock}
         "\n\n指令：请仔细观察提供的产品图，结合卖点、品类和平台特性设计分镜。强制要求：1. 严格遵守动态推演的风格设定。2. 在 `visualDNA` 中输出一段【顶级英文 DALL-E 生图 Prompt】。3. 每镜 source_image_id 必须与画面语义和素材目录一致。\n" +
         gridHint;
 
-      var userContent = [{ type: "text", text: userTextBlock }];
-      base64Images.forEach(function (b64) {
-        userContent.push({ type: "image_url", image_url: { url: b64, detail: "high" } });
-      });
-
       var lastError = null;
       var styleObj = null;
       var originalContent = "";
+      var acceptableMin = Math.max(4, Math.floor(targetNodes * 0.75));
+      if (isStyleC) acceptableMin = Math.max(acceptableMin, minShotsPhysics);
+      var batchSize = 12;
 
       for (var attempt = 1; attempt <= 2; attempt++) {
         try {
           if (attempt > 1) {
             setStoryEngineProgress(
-              styleCfg.name + " 镜头数不达标，正在强制 AI 重写 (尝试 " + attempt + "/2)...",
+              styleCfg.name + " 分批生成不达标，正在重试 (尝试 " + attempt + "/2)...",
               10 + attempt * 20
             );
           }
 
-          const res = await llmApiFetch("chat/completions", {
-            label: styleCfg.name + " 分镜",
-            apiKey: key,
-            body: JSON.stringify({
-              model: window.getTextModel(),
-              max_tokens: 8192,
-              temperature: attempt === 1 ? 0.1 : 0.3,
-              messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userContent },
-              ],
-              response_format: { type: "json_object" },
-            }),
-          });
+          var currentShots = [];
+          var directorTreatment = "";
+          var visualDNA = "";
 
-          const data = await res.json();
-          originalContent = String(data?.choices?.[0]?.message?.content || "");
-          if (!originalContent.trim()) throw new Error(styleCfg.name + " 响应为空");
+          while (currentShots.length < targetNodes) {
+            var shotsToRequest = Math.min(batchSize, targetNodes - currentShots.length);
+            var batchPct =
+              12 +
+              (typeof styleIndex === "number" ? styleIndex : 0) * 28 +
+              Math.round((currentShots.length / targetNodes) * 55);
+            setStoryEngineProgress(
+              styleCfg.name +
+                " 分批生成中… (已完成 " +
+                currentShots.length +
+                "/" +
+                targetNodes +
+                " 镜)",
+              batchPct
+            );
 
-          const parsed = extractAndParseStoryboardJson(originalContent);
-          styleObj = parsed.style != null ? parsed.style : parsed;
+            var batchPacingAddendum =
+              "\n\n【本分镜批次任务】你这次必须严格输出 " +
+              shotsToRequest +
+              " 个镜头（shots 数组长度必须等于 " +
+              shotsToRequest +
+              "）。全片目标总镜数为 " +
+              targetNodes +
+              "，当前已完成 " +
+              currentShots.length +
+              " 镜。";
+            if (currentShots.length === 0) {
+              batchPacingAddendum +=
+                " 这是第 1 批：须输出 director_treatment、visualDNA 与 shots。";
+            } else {
+              var lastShot = currentShots[currentShots.length - 1];
+              batchPacingAddendum +=
+                "\n注意，上一镜的画面是：" +
+                String(lastShot.visual || "") +
+                "，动作是：" +
+                String(lastShot.motion || "") +
+                "。请确保本批次第 1 镜与它完美衔接。续写批可仅返回 shots，或与首批相同 JSON 顶层字段。";
+            }
 
-          if (!styleObj.shots || !Array.isArray(styleObj.shots)) throw new Error("缺少分镜数组");
+            var batchUserContent = [{ type: "text", text: userTextBlock + batchPacingAddendum }];
+            base64Images.forEach(function (b64) {
+              batchUserContent.push({ type: "image_url", image_url: { url: b64, detail: "high" } });
+            });
 
-          var acceptableMin = Math.max(4, Math.floor(targetNodes * 0.75));
-          if (styleObj.shots.length < acceptableMin) {
+            const res = await llmApiFetch("chat/completions", {
+              label: styleCfg.name + " 分镜 批" + (Math.floor(currentShots.length / batchSize) + 1),
+              apiKey: key,
+              body: JSON.stringify({
+                model: window.getTextModel(),
+                max_tokens: 8192,
+                temperature: attempt === 1 ? 0.1 : 0.3,
+                messages: [
+                  { role: "system", content: systemPrompt },
+                  { role: "user", content: batchUserContent },
+                ],
+                response_format: { type: "json_object" },
+              }),
+            });
+
+            const data = await res.json();
+            originalContent = String(data?.choices?.[0]?.message?.content || "");
+            if (!originalContent.trim()) throw new Error(styleCfg.name + " 批次响应为空");
+
+            const parsed = extractAndParseStoryboardJson(originalContent);
+            var batchRoot = parsed.style != null ? parsed.style : parsed;
+            var batchShots =
+              batchRoot && batchRoot.shots && Array.isArray(batchRoot.shots) ? batchRoot.shots : [];
+
+            if (!batchShots.length) {
+              throw new Error(styleCfg.name + " 批次缺少 shots（需 " + shotsToRequest + " 镜）");
+            }
+
+            if (currentShots.length === 0) {
+              if (batchRoot.director_treatment) {
+                directorTreatment = String(batchRoot.director_treatment);
+              }
+              if (batchRoot.visualDNA != null) visualDNA = String(batchRoot.visualDNA);
+            }
+
+            if (batchShots.length > shotsToRequest) {
+              batchShots = batchShots.slice(0, shotsToRequest);
+            }
+            currentShots = currentShots.concat(batchShots);
+          }
+
+          if (currentShots.length < acceptableMin) {
             throw new Error(
               "AI偷懒拦截：根据时长算法需要 " +
                 targetNodes +
-                " 镜，实际仅输出 " +
-                styleObj.shots.length +
+                " 镜，分批合计仅 " +
+                currentShots.length +
                 " 镜。"
             );
           }
+
+          if (currentShots.length > targetNodes) {
+            currentShots = currentShots.slice(0, targetNodes);
+          }
+
+          styleObj = {
+            styleName: styleCfg.name,
+            director_treatment: directorTreatment,
+            visualDNA: visualDNA,
+            shots: currentShots,
+          };
 
           break;
         } catch (e) {
           lastError = e;
           console.warn(
-            "[拦截与重试] " + styleCfg.name + " 第 " + attempt + " 次生成失败:",
+            "[拦截与重试] " + styleCfg.name + " 第 " + attempt + " 次分批生成失败:",
             e && e.message ? e.message : e
           );
           if (attempt === 2) {

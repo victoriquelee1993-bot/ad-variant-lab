@@ -65,7 +65,8 @@ Style detection in code: `styleCfg.id` (`"A"`|`"B"`|`"C"`), `isStyleCFastCut(sty
 ### LLM prompt: `dynamicPacingBlock` in `craftSingleStyle`
 
 - **Duration-driven shot count**: `targetNodes = ceil(targetMax / idealShotSec)`; Style C uses `idealShotSec=1.8`, `max(…, ceil(targetMax/2))`, single-shot cap **2.5s** in prompt + `clampShotDurationsToWindow`.
-- **Retry gate**: `acceptableMin = max(4, floor(targetNodes * 0.75))`; Style C total below `targetMin` after clamp → throw (cannot stretch shots past 2.5s).
+- **Style C shot-count physics**: `minShotsPhysics = ceil(targetMin / 2.5)`; `targetNodes` and `acceptableMin` must be ≥ this (e.g. 45s min → ≥18 shots). `shots × 2.5s` is the hard total ceiling before clamp throws.
+- **Retry gate**: `acceptableMin = max(4, floor(targetNodes * 0.75), minShotsPhysics for C)`.
 - **JSON parse**: `extractAndParseStoryboardJson` (regex + `JSON.parse` + trailing-comma fix); `parseJsonWithClosingBraceRepair` only as fallback.
 - **Visual refs**: LLM sets `source_image_id` only; `applyStoryboardVisualRewrites` strips grid text from `visual` and appends `(参考素材格 #k)` from ID.
 - **4 / 9 / 16 / 25 grid arrays** in `visual` when per-shot duration would still overflow:
