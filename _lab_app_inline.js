@@ -998,10 +998,9 @@
       }
 
       var scale = 1;
-      var targetIdeal = roundDurD(lo + (hi - lo) * 0.4); // 目标定在区间中位偏上，拒绝踩底线
-      if (rawSum < targetIdeal) scale = targetIdeal / rawSum;
-      else if (rawSum > hi + 0.02) scale = hi / rawSum;
-      var goal = rawSum < targetIdeal ? targetIdeal : rawSum > hi + 0.02 ? hi : rawSum;
+      if (rawSum < lo) scale = lo / rawSum;
+      else if (rawSum > hi) scale = hi / rawSum;
+      var goal = rawSum < lo ? lo : rawSum > hi ? hi : rawSum;
 
       var tot = 0;
       for (i = 0; i < shots.length; i++) {
@@ -1217,30 +1216,23 @@
       var platformStr = String(p.platform || "");
       var isShortVideo = /TikTok|Reels|Shorts|小红书|Instagram/.test(platformStr);
       var isStyleC = isStyleCFastCut(styleCfg);
-      var avgShotLen = isShortVideo || isStyleC ? 1.5 : 3.5;
-      var theoreticalShots = Math.ceil(targetMax / avgShotLen);
-
-      var targetNodes = 4;
-      if (theoreticalShots <= 6) {
-        targetNodes = 4;
-      } else if (theoreticalShots <= 12) {
-        targetNodes = 9;
-      } else if (theoreticalShots <= 20) {
-        targetNodes = 16;
-      } else if (theoreticalShots <= 27) {
-        targetNodes = 25;
+      var avgShotLen = 3.0;
+      if (isStyleC) {
+        avgShotLen = isShortVideo ? 1.2 : 1.8;
+      } else if (styleCfg.id === "A") {
+        avgShotLen = isShortVideo ? 2.5 : 4.0;
       } else {
-        var remainder = theoreticalShots - 25;
-        if (remainder <= 6) targetNodes = 25 + 4;
-        else if (remainder <= 12) targetNodes = 25 + 9;
-        else if (remainder <= 20) targetNodes = 25 + 16;
-        else targetNodes = 25 + 25;
+        avgShotLen = isShortVideo ? 2.0 : 3.0;
       }
 
-      var minShotsPhysics = isStyleC ? Math.ceil(targetMin / 2.5) : 0;
-      if (isStyleC && targetNodes < minShotsPhysics) {
-        targetNodes = minShotsPhysics;
+      var dynamicTargetDur = targetMin + (targetMax - targetMin) * (isStyleC ? 0.9 : 0.6);
+      var targetNodes = Math.ceil(dynamicTargetDur / avgShotLen);
+
+      var minShotsPhysics = isStyleC ? Math.ceil(targetMin / 2.5) : Math.ceil(targetMin / 5.0);
+      if (targetNodes < Math.max(4, minShotsPhysics)) {
+        targetNodes = Math.max(4, minShotsPhysics);
       }
+      if (targetNodes > 25) targetNodes = 25;
 
       setStoryEngineProgress(
         styleCfg.name + " 正在生成，当前时长匹配目标镜头数: " + targetNodes + " 镜...",
@@ -1248,26 +1240,16 @@
       );
 
       var dynamicPacingBlock =
-        "【最高级别数学死命令：阶梯式镜头定额】\n" +
-        "当前目标总时长为【" +
-        targetMin +
-        "-" +
-        targetMax +
-        "s】。\n" +
-        "💥 智能化分镜要求：全片共需【" +
-        targetNodes +
-        " 个镜头】（基于 4/9/16/25 阶梯矩阵推算）。系统将分多批请求你撰写；每批 user 消息会写明本批须输出的镜头数，严禁单批多写或少写。\n" +
-        "🔥【全平台通用法则】：前 3 秒（第 1 镜或前 2 镜）必须是极具视觉冲击力的 Hook！\n" +
-        (isShortVideo || isStyleC
-          ? "👉 【短视频/Style C 法则】：单镜严禁超过 2.5 秒，用 " +
-            targetNodes +
-            " 镜的高频切换填满总时长。"
-          : "👉 【传统/电商法则】：必须严格分配 " +
-            targetNodes +
-            " 镜，允许局部出现 4-6s 包含复杂空间调度（如 Arc Orbit）的长镜。") +
-        "\n⚡ 警告：如果总时长极长，导致分配到 " +
-        targetNodes +
-        " 镜后单镜时长依然超标，请在 visual 中调用「宫格分屏阵列」在同一镜内高频闪烁吸收时长，绝不允许通过拖长单个画面的秒数来注水！\n";
+        "【分镜管线：平台与风格适配法则（打破同质化）】\n" +
+        "当前投放平台为【" + (platformStr || "未指定") + "】，目标总时长区间为【" + targetMin + "-" + targetMax + "s】。\n" +
+        "系统已根据平台调性和本套风格（" + styleCfg.name + "）为你量身定制了【" + targetNodes + " 个镜头】。\n" +
+        "请严格按照以下法则分配单镜时长，总时长必须落入区间：\n";
+
+      if (isShortVideo || isStyleC) {
+        dynamicPacingBlock += "👉 【短视频/极速快剪法则】：节奏必须极快、抓人！单镜时长严禁超过 2.5 秒，强制使用 0.5s-1.5s 的高频短切镜头填满总时长，绝不拖泥带水。\n";
+      } else {
+        dynamicPacingBlock += "👉 【传统/中长视频法则】：严禁机械化平均分配！根据画面信息量，允许 0.8s 的细节闪现和 4-5s 的缓慢空间调度（如 Arc Orbit）并存，注重叙事呼吸感。\n";
+      }
 
       const systemPrompt =
         `你是一位身价千万的商业广告导演。你现在的任务是生成一份「初稿即过稿」的专业脚本。
