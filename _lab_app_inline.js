@@ -998,9 +998,14 @@
       }
 
       var scale = 1;
-      if (rawSum < lo) scale = lo / rawSum;
-      else if (rawSum > hi) scale = hi / rawSum;
-      var goal = rawSum < lo ? lo : rawSum > hi ? hi : rawSum;
+      var goal = rawSum;
+      if (rawSum < lo) {
+        goal = lo + (hi - lo) * 0.3; // 不贴底线，拉到区间的 30% 处留白
+        scale = goal / rawSum;
+      } else if (rawSum > hi) {
+        goal = hi - (hi - lo) * 0.15; // 不贴顶线，压缩到区间的 85% 处留出呼吸感
+        scale = goal / rawSum;
+      }
 
       var tot = 0;
       for (i = 0; i < shots.length; i++) {
@@ -1227,12 +1232,12 @@
 
       var dynamicTargetDur = targetMin + (targetMax - targetMin) * (isStyleC ? 0.9 : 0.6);
       var targetNodes = Math.ceil(dynamicTargetDur / avgShotLen);
-
-      var minShotsPhysics = isStyleC ? Math.ceil(targetMin / 2.5) : Math.ceil(targetMin / 5.0);
-      if (targetNodes < Math.max(4, minShotsPhysics)) {
-        targetNodes = Math.max(4, minShotsPhysics);
+      var minNodes = Math.max(4, targetNodes - 2);
+      var maxNodes = Math.min(20, targetNodes + 3);
+      if (isStyleC) {
+        minNodes = Math.max(6, Math.ceil(targetMin / 2.5));
+        maxNodes = Math.min(25, minNodes + 5);
       }
-      if (targetNodes > 25) targetNodes = 25;
 
       setStoryEngineProgress(
         styleCfg.name + " 正在生成，当前时长匹配目标镜头数: " + targetNodes + " 镜...",
@@ -1242,7 +1247,7 @@
       var dynamicPacingBlock =
         "【分镜管线：平台与风格适配法则（打破同质化）】\n" +
         "当前投放平台为【" + (platformStr || "未指定") + "】，目标总时长区间为【" + targetMin + "-" + targetMax + "s】。\n" +
-        "系统已根据平台调性和本套风格（" + styleCfg.name + "）为你量身定制了【" + targetNodes + " 个镜头】。\n" +
+        "系统已根据平台调性和本套风格（" + styleCfg.name + "）为你分配了【" + minNodes + " 到 " + maxNodes + " 个镜头】的创作区间。请根据最佳叙事节奏自由决定最终镜头数！\n" +
         "请严格按照以下法则分配单镜时长，总时长必须落入区间：\n";
 
       if (isShortVideo || isStyleC) {
@@ -1315,9 +1320,9 @@ ${dynamicPacingBlock}
       var maxBatches = Math.ceil(targetNodes / batchSize) + 1; // 防死循环兜底
       var lastShotContext = null;
 
-      while (currentShots.length < targetNodes && batchCount < maxBatches) {
+      while (currentShots.length < minNodes && batchCount < maxBatches) {
         batchCount++;
-        var shotsToRequest = Math.min(batchSize, targetNodes - currentShots.length);
+        var shotsToRequest = Math.min(batchSize, maxNodes - currentShots.length);
 
         setStoryEngineProgress(
           styleCfg.name + " 正在分批生成 (第 " + batchCount + " 批)... 已完成 " + currentShots.length + "/" + targetNodes + " 镜", 
@@ -1391,6 +1396,9 @@ ${dynamicPacingBlock}
 
             // 将本批次的镜头拼接到总数组中
             currentShots = currentShots.concat(tempStyleObj.shots);
+            if (tempStyleObj.shots.length < shotsToRequest) {
+              batchCount = maxBatches; // AI 自发完结，不再强行逼迫其凑镜头数
+            }
 
             // 记录本批最后一镜，供下一次循环承接使用
             if (currentShots.length > 0) {
