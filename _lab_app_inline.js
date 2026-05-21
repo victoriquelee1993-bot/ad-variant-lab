@@ -1371,6 +1371,7 @@ ${dynamicPacingBlock}
             const res = await llmApiFetch("chat/completions", {
               label: styleCfg.name + " 分镜 (批次 " + batchCount + ")",
               apiKey: key,
+              timeout: 180000,
               body: JSON.stringify({
                 model: window.getTextModel(),
                 max_tokens: 8192,
