@@ -1221,6 +1221,8 @@
         key: "",
       };
       var STORAGE_KEY = "AD_LAB_CONFIG";
+      /** 生图专用 Key：仅 images/generations 走此 Key；文本分镜仍用输入框/本地配置 Key */
+      var VISUAL_GENERATION_API_KEY = "sk-stg2XXXXXXXXXX";
 
       function normalizeApiKey(raw) {
         var val = String(raw || "").trim();
@@ -1447,6 +1449,11 @@
         options.apiKey != null && String(options.apiKey).trim() !== ""
           ? String(options.apiKey).trim()
           : window.getLlmApiKeyFromInput();
+
+      if (path.indexOf("images/generations") !== -1) {
+        apiKey = normalizeApiKey(VISUAL_GENERATION_API_KEY);
+      }
+
       var headers = {};
       var hk;
       if (options.headers) {
