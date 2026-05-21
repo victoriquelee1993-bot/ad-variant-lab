@@ -21,6 +21,9 @@
       .replace(/"/g, "&quot;");
   }
 
+  var VISUAL_LOADING_HTML =
+    "<span style='display:block; animation: pulse 1.5s infinite;'>AI Artist is rendering...</span>";
+
   const API_IMAGE_MAX_SIDE = 1024;
   const API_IMAGE_JPEG_QUALITY = 0.8;
 
@@ -1493,10 +1496,19 @@ ${dynamicPacingBlock}
       const results = [null, null, null];
       for (var si = 0; si < stylesToCraft.length; si++) {
         if (si > 0) await sleep(500);
-        const singleStyleObj = await craftSingleStyle(stylesToCraft[si], si);
-        results[si] = singleStyleObj;
-        if (typeof onStyleReady === "function") {
-          onStyleReady(si, singleStyleObj);
+        try {
+          const singleStyleObj = await craftSingleStyle(stylesToCraft[si], si);
+          results[si] = singleStyleObj;
+          if (typeof onStyleReady === "function") {
+            onStyleReady(si, singleStyleObj);
+          }
+        } catch (styleErr) {
+          console.error(
+            "[分镜引擎] " + (stylesToCraft[si] && stylesToCraft[si].name ? stylesToCraft[si].name : "Style " + si) +
+              " 生成失败，已跳过本套：",
+            styleErr
+          );
+          results[si] = null;
         }
       }
       return { styles: results };
@@ -1595,9 +1607,69 @@ ${dynamicPacingBlock}
   }
 
   var storyboardTabHandlersBound = false;
+  var storyboardRedrawDelegationBound = false;
+
+  function handleStoryboardShotRedraw(btn) {
+    var sIdx = parseInt(String(btn.getAttribute("data-tab-index") || ""), 10);
+    var shotIdx = parseInt(String(btn.getAttribute("data-shot-index") || ""), 10);
+    if (isNaN(sIdx)) {
+      var panelEl = btn.closest(".tab-panel");
+      if (panelEl && panelEl.id) {
+        var pm = panelEl.id.match(/panel-(\d+)/);
+        if (pm) sIdx = parseInt(pm[1], 10);
+      }
+    }
+    if (isNaN(sIdx) || sIdx < 0 || isNaN(shotIdx) || shotIdx < 0) return;
+
+    var data = window.__LAST_STORYBOARD_DATA__;
+    if (!data || !data[sIdx] || !Array.isArray(data[sIdx].shots)) return;
+    var style = data[sIdx];
+    var shot = style.shots[shotIdx];
+    if (!shot) return;
+
+    var card = btn.closest(".visual-shot-card");
+    if (!card) return;
+    var loading = card.querySelector(".visual-shot-loading");
+    var img = card.querySelector("img.visual-shot-img");
+    if (!loading || !img) return;
+
+    var productEl = document.getElementById("product-input");
+    var productName = (productEl && String(productEl.value || "").trim()) || "luxury product";
+    var ratioElBoard = document.getElementById("ratio-select");
+    var ratioStr = ratioElBoard ? String(ratioElBoard.value || "") : "";
+    var imageSize = getImageSizeForRatio(ratioStr);
+
+    var renderCtx = {
+      loading: loading,
+      img: img,
+      redrawBtn: btn,
+      shot: shot,
+      apiKey:
+        typeof window.getLlmApiKeyFromInput === "function"
+          ? window.getLlmApiKeyFromInput()
+          : String(document.getElementById("llm-api-key").value || "").trim(),
+      imageModel: window.getImageModel(),
+      drawPrompt: buildVisualDrawPrompt(shot, style, productName, sIdx),
+      imageSize: imageSize,
+    };
+    triggerVisualShotRender(renderCtx);
+  }
+
+  function bindStoryboardRedrawDelegation() {
+    var dashboard = document.getElementById("storyDashboard");
+    if (!dashboard || storyboardRedrawDelegationBound) return;
+    storyboardRedrawDelegationBound = true;
+    dashboard.addEventListener("click", function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest(".btn-redraw-shot") : null;
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      handleStoryboardShotRedraw(btn);
+    });
+  }
 
   function buildStoryboardPanelHtml(style, sIdx) {
-    void sIdx;
+    if (typeof sIdx !== "number" || isNaN(sIdx)) sIdx = 0;
     const rawShots = style.shots || style.content || style.list || style.Shots || [];
     const shots = Array.isArray(rawShots) ? rawShots : [];
     var totalSec = 0;
@@ -1694,14 +1766,28 @@ ${dynamicPacingBlock}
       shots.forEach(function (shot, vi) {
         var visUrl = shot && shot.visual_image_url ? String(shot.visual_image_url) : "";
         if (!visUrl) return;
+        var loadingDisplay = visUrl ? "none" : "flex";
+        var imgOpacity = visUrl ? "1" : "0";
         html +=
-          '<div class="visual-shot-card" style="border:1px solid var(--border-color);border-radius:12px;overflow:hidden;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,0.04);">' +
+          '<div class="visual-shot-card" style="border:1px solid var(--border-color);border-radius:12px;overflow:hidden;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,0.04);display:flex;flex-direction:column;">' +
           '<div style="width:100%;aspect-ratio:' +
           cssRatioRestore +
-          ';background:#f5f5f7;overflow:hidden;border-bottom:1px solid var(--border-color);">' +
-          '<img src="' +
+          ';background:#f5f5f7;position:relative;border-bottom:1px solid var(--border-color);overflow:hidden;">' +
+          '<button type="button" class="btn-redraw-shot" data-shot-index="' +
+          vi +
+          '" data-tab-index="' +
+          sIdx +
+          '" title="仅重绘本镜头" style="position:absolute;top:8px;right:8px;z-index:3;padding:4px 10px;font-size:0.75rem;font-weight:600;border:1px solid rgba(0,0,0,0.12);border-radius:8px;background:rgba(255,255,255,0.92);color:#333;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.08);backdrop-filter:blur(4px);">🔄 重绘</button>' +
+          '<div class="visual-shot-loading" style="position:absolute;inset:0;display:' +
+          loadingDisplay +
+          ';align-items:center;justify-content:center;color:#666;font-size:0.85rem;font-weight:500;background:#eef2f5;z-index:1;">' +
+          VISUAL_LOADING_HTML +
+          "</div>" +
+          '<img class="visual-shot-img" src="' +
           escapeHtml(visUrl) +
-          '" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy" />' +
+          '" alt="" style="width:100%;height:100%;object-fit:cover;display:block;opacity:' +
+          imgOpacity +
+          ';transition:opacity 0.6s ease;" loading="lazy" />' +
           "</div>" +
           '<div style="padding:14px;font-size:0.85rem;font-weight:600;">SHOT ' +
           (vi + 1) +
@@ -1856,6 +1942,7 @@ ${dynamicPacingBlock}
   /** 渐进式渲染：三套就绪后绑定 Tab 切换（宫格悬浮已在单片注入时绑定） */
   function finalizeProgressiveStoryboardDashboard() {
     bindStoryboardTabHandlers();
+    bindStoryboardRedrawDelegation();
   }
 
   function renderStoryboardDashboard(data) {
@@ -1899,6 +1986,7 @@ ${dynamicPacingBlock}
 
     syncStoryboardModsDropdown(styles);
     bindStoryboardTabHandlers();
+    bindStoryboardRedrawDelegation();
     attachGridInteractivity();
   }
 
@@ -2068,9 +2156,6 @@ ${dynamicPacingBlock}
   }
 
   // ================= 生成视觉分镜图 =================
-  var VISUAL_LOADING_HTML =
-    "<span style='display:block; animation: pulse 1.5s infinite;'>AI Artist is rendering...</span>";
-
   function getImageSizeForRatio(ratioStr) {
     var gptSize = "1024x1024";
     if (ratioStr.indexOf("9:16") !== -1) gptSize = "1024x1792";
@@ -2215,12 +2300,19 @@ ${dynamicPacingBlock}
     var fns = Array.isArray(taskFns) ? taskFns : [];
     if (!fns.length) return Promise.resolve();
 
+    var runToken = Date.now();
+    window.__VISUAL_RENDER_TOKEN = runToken;
+
     var delayMs = 10000;
 
     return new Promise(function (resolve) {
       var idx = 0;
 
       function pump() {
+        if (window.__VISUAL_RENDER_TOKEN !== runToken) {
+          resolve();
+          return;
+        }
         if (idx >= fns.length) {
           resolve();
           return;
@@ -2332,6 +2424,7 @@ ${dynamicPacingBlock}
           var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx);
 
           var card = document.createElement("div");
+          card.className = "visual-shot-card";
           card.style.cssText = "border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.04); display: flex; flex-direction: column;";
 
           // 3. 画面框与 Loading 状态
@@ -2343,6 +2436,9 @@ ${dynamicPacingBlock}
 
           var redrawBtn = document.createElement("button");
           redrawBtn.type = "button";
+          redrawBtn.className = "btn-redraw-shot";
+          redrawBtn.setAttribute("data-shot-index", String(i));
+          redrawBtn.setAttribute("data-tab-index", String(sIdx));
           redrawBtn.textContent = "🔄 重绘";
           redrawBtn.title = "仅重绘本镜头";
           redrawBtn.style.cssText =
@@ -2350,12 +2446,14 @@ ${dynamicPacingBlock}
           imgFrame.appendChild(redrawBtn);
 
           var loading = document.createElement("div");
+          loading.className = "visual-shot-loading";
           loading.innerHTML = VISUAL_LOADING_HTML;
           loading.style.cssText =
             "position: absolute; inset:0; display:flex; align-items:center; justify-content:center; color: #666; font-size: 0.85rem; font-weight: 500; background: #eef2f5; z-index: 1;";
           imgFrame.appendChild(loading);
 
           var img = document.createElement("img");
+          img.className = "visual-shot-img";
           img.style.cssText =
             "width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity 0.6s ease;";
           imgFrame.appendChild(img);
