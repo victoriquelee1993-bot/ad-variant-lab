@@ -2056,6 +2056,8 @@
       var LAB_BUSY_PARSE_LABEL = "AI 大脑正在深度审片中，请稍候...";
       var LAB_BUSY_OCR_INIT_LABEL =
         "正在加载离线 OCR 引擎(首次需下载语言包，请耐心等待)…";
+      var LAB_BUSY_OCR_CLOUD_LABEL =
+        "本地引擎启动失败，正在通过云端 AI 视觉提取文字...";
 
       function setLabBusy(on) {
         var el = document.getElementById("labBusyOverlay");
@@ -2406,43 +2408,43 @@
         return Math.min(120000, Math.max(45000, 45000 + Math.floor(s / 4096) * 250));
       }
 
+      function briefOcrLoggerUpdateBusyLabel(m) {
+        if (!m) return;
+        var overlay = document.getElementById("labBusyOverlay");
+        var lab = overlay ? overlay.querySelector(".lab-busy-label") : null;
+        if (!lab) return;
+        var st = String(m.status || "");
+        var showProgress =
+          st.indexOf("loading") !== -1 ||
+          st.indexOf("initializing") !== -1 ||
+          st.indexOf("traineddata") !== -1 ||
+          typeof m.progress === "number";
+        if (!showProgress) return;
+        var pct = Math.round((m.progress || 0) * 100);
+        lab.textContent = "正在下载离线 OCR 引擎(首次较慢): " + pct + "%";
+      }
+
       async function briefEnsureOcrWorker() {
         if (typeof Tesseract === "undefined") {
           console.warn("[Brief] Tesseract 全局对象不存在，无法 OCR");
           return null;
         }
         if (briefOcrWorker) return briefOcrWorker;
-        var initMs = 12000; // 从 90 秒压缩到 12 秒极速熔断
+        var initMs = 30000;
         if (typeof Tesseract.createWorker !== "function") return null;
         try {
           briefOcrWorker = await briefRaceWithTimeout(
             Tesseract.createWorker("chi_sim+eng", 1, {
-              logger: function () {},
+              logger: briefOcrLoggerUpdateBusyLabel,
             }),
             initMs,
             "Tesseract.createWorker(chi_sim+eng)"
           );
           return briefOcrWorker;
         } catch (eW1) {
-          console.warn(
-            "[Brief] OCR Worker 初始化失败（常见于训练数据/语言包网络不可用），将尝试降级:",
-            eW1
-          );
-          try {
-            briefOcrWorker = await briefRaceWithTimeout(
-              Tesseract.createWorker("eng", 1, {
-                logger: function () {},
-              }),
-              initMs,
-              "Tesseract.createWorker(eng,fallback)"
-            );
-            console.warn("[Brief] OCR Worker 已降级为 eng（英文包，体积更小）");
-            return briefOcrWorker;
-          } catch (eW2) {
-            console.warn("[Brief] OCR Worker eng 降级仍失败:", eW2);
-            briefOcrWorker = null;
-            return null;
-          }
+          console.warn("[Brief] OCR Worker 初始化失败（将尝试云端视觉兜底）:", eW1);
+          briefOcrWorker = null;
+          return null;
         }
       }
 
@@ -2455,6 +2457,71 @@
           }
         }
         briefOcrWorker = null;
+      }
+
+      function briefFileToDataUrl(file) {
+        return new Promise(function (resolve, reject) {
+          if (!file) {
+            reject(new Error("无效文件"));
+            return;
+          }
+          var reader = new FileReader();
+          reader.onload = function () {
+            resolve(reader.result);
+          };
+          reader.onerror = function () {
+            reject(reader.error || new Error("FileReader 读取失败"));
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+
+      async function briefOcrVisionCloudFallback(file, tag, busyLabelEl) {
+        var apiKey =
+          typeof window.getLlmApiKeyFromInput === "function"
+            ? String(window.getLlmApiKeyFromInput() || "").trim()
+            : "";
+        if (!apiKey) {
+          throw new Error("请先输入 OPENAI API KEY 以使用云端视觉 OCR 兜底。");
+        }
+        if (busyLabelEl) busyLabelEl.textContent = LAB_BUSY_OCR_CLOUD_LABEL;
+
+        var dataUrl = await briefFileToDataUrl(file);
+        var res = await window.llmApiFetch("chat/completions", {
+          label: "简报图片 OCR(云端)",
+          apiKey: apiKey,
+          timeout: 90000,
+          body: JSON.stringify({
+            model: window.getTextModel(),
+            temperature: 0,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "text",
+                    text: "请提取这张图片中的所有文本，无需任何解释，只返回图片中的文字内容",
+                  },
+                  {
+                    type: "image_url",
+                    image_url: { url: dataUrl, detail: "high" },
+                  },
+                ],
+              },
+            ],
+          }),
+        });
+
+        var data = await res.json();
+        var content =
+          data &&
+          data.choices &&
+          data.choices[0] &&
+          data.choices[0].message &&
+          data.choices[0].message.content;
+        var text = String(content || "").trim();
+        console.log("[Brief] 云端视觉 OCR 完成:", tag, "字符数", text.length);
+        return text;
       }
 
       async function extractImageOcr(file, ext, label) {
@@ -2474,37 +2541,34 @@
           if (busyLabelEl) busyLabelEl.textContent = LAB_BUSY_OCR_INIT_LABEL;
 
           var waitMs = briefOcrWaitMs(file);
-          waitMs = Math.min(waitMs, 20000); // OCR 识别总时长最多不超过 20 秒，超时直接放弃返回空
-          var initMs = 12000;
-          console.log("[Brief] OCR 最长等待 ms:", tag, waitMs);
+          waitMs = Math.min(waitMs, 20000);
+          var initMs = 30000;
+          console.log("[Brief] OCR 本地 init/recognize 上限 ms:", tag, initMs, waitMs);
+
+          var localText = "";
           try {
-            await briefRaceWithTimeout(briefEnsureOcrWorker(), initMs, "briefEnsureOcrWorker");
-          } catch (eInit) {
-            console.warn("[Brief] OCR Worker 初始化超时或失败:", tag, eInit);
-            await briefTerminateOcrWorker();
-            throw new Error(
-              "OCR 引擎初始化超时（可能因语言包下载失败）。请改用 PDF/Word 简报，或检查网络后重试。"
-            );
-          }
-
-          if (busyLabelEl) busyLabelEl.textContent = LAB_BUSY_PARSE_LABEL;
-
-          var worker = briefOcrWorker;
-          if (worker && typeof worker.recognize === "function") {
-            try {
+            var worker = await briefRaceWithTimeout(briefEnsureOcrWorker(), initMs, "briefEnsureOcrWorker");
+            if (worker && typeof worker.recognize === "function") {
+              if (busyLabelEl) busyLabelEl.textContent = "正在使用本地 OCR 识别文字…";
               var r1 = await briefRaceWithTimeout(worker.recognize(file), waitMs, "worker.recognize");
-              var text1 = r1 && r1.data && r1.data.text ? String(r1.data.text).trim() : "";
-              if (text1) return text1;
-            } catch (eR1) {
-              console.warn("[Brief] worker.recognize 失败或超时:", tag, eR1);
-              await briefTerminateOcrWorker();
+              localText = r1 && r1.data && r1.data.text ? String(r1.data.text).trim() : "";
             }
+          } catch (eLocal) {
+            console.warn("[Brief] 本地 OCR 失败或超时，转入云端视觉兜底:", tag, eLocal);
+            await briefTerminateOcrWorker();
           }
-          throw new Error(
-            "图片 OCR 识别失败或超时（" +
-              tag +
-              "）。请改用 PDF/Word 简报，或稍后重试。"
-          );
+
+          if (localText) return localText;
+
+          try {
+            return await briefOcrVisionCloudFallback(file, tag, busyLabelEl);
+          } catch (eCloud) {
+            console.warn("[Brief] 云端视觉 OCR 兜底失败:", tag, eCloud);
+            if (eCloud && eCloud.message && /API KEY/i.test(String(eCloud.message))) {
+              throw eCloud;
+            }
+            return "";
+          }
         } finally {
           if (busyLabelEl) busyLabelEl.textContent = LAB_BUSY_PARSE_LABEL;
           if (!wasBusyBefore) setLabBusy(false);
