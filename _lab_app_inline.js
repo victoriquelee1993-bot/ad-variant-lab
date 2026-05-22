@@ -777,24 +777,9 @@
       "（未单独检出：请仅从 [uspSummary] 中可核对的场景相关原子短语里抽取一条，作为本套 Style B 唯一贯穿主场景关键词；不得发明 briefing 外的新场景名。）";
 
     const stylesToCraft = [
-      {
-        id: "A",
-        name: "Style A (核心属性揭秘 / Core Attribute)",
-        focus:
-          "【动态推演：材质与功能本源】请根据当前产品类目自行推演最适配的视觉风格！严禁无脑套用3C/美妆模板。如果产品是工业机械，请展现力量与工程结构；如果是宠物食品，请展现原切质感与食欲。重点：剥离冗杂环境，用最极致的光影和机位（如微距/透视）放大产品最核心的物理或功能特征。",
-      },
-      {
-        id: "B",
-        name: "Style B (场景与情绪共生 / Context & Emotion)",
-        focus:
-          "【动态推演：真实使用语境】必须基于 [usage_scenarios] 推演最符合该品类目标受众的生活/使用场景。禁止强行制造高级感。如果是户外装备，必须有泥土与风雨的粗粝感；如果是母婴用品，必须有温和柔软的交互。通过一连串自然的动作流，让产品与使用者产生情绪共鸣。",
-      },
-      {
-        id: "C",
-        name: "Style C (感官刺激与钩子 / Hook-Driven)",
-        focus:
-          "【动态推演：反常规视觉奇观】彻底打破常规！根据品类特性，设计极具反差感或视觉欺骗性的开场。强制使用 Match Cut（匹配剪辑）、极端视角或夸张的音效放大体验。动作必须快、准、狠，绝不拖泥带水，让观众在第一秒就被按在屏幕前。",
-      },
+      { id: "A", name: "Style A (核心属性揭秘 / Core Attribute)" },
+      { id: "B", name: "Style B (场景与情绪共生 / Context & Emotion)" },
+      { id: "C", name: "Style C (感官刺激与钩子 / Hook-Driven)" },
     ];
 
     /** 读取宫格 DOM 元数据（可选）：data-visual-class、data-visual-features */
@@ -1528,8 +1513,15 @@
         dynamicPacingBlock += "👉 【传统/中长视频法则】：严禁机械化平均分配！根据画面信息量，允许 0.8s 的细节闪现和 4-5s 的缓慢空间调度（如 Arc Orbit）并存，注重叙事呼吸感。\n";
       }
 
+      var productLabelForStyle =
+        String(p.product != null ? p.product : "未填写");
+      var categoryLabelForStyle =
+        p.category && String(p.category).trim() ? String(p.category).trim() : "未分类";
+
       const systemPrompt =
         `你是一位身价千万的商业广告导演。你现在的任务是生成一份「初稿即过稿」、可直接投产的商业广告分镜脚本。
+
+【动态品类风格裂变法则（核心准则）】：严禁使用诸如「实验室风、佩戴场景、快剪」这种通用且庸俗的固定风格模板。你的 3 套分镜风格必须是基于当前产品【${productLabelForStyle}】及其类目【${categoryLabelForStyle}】深度定制的创意概念！如果产品是「香水」，风格可能是：「法式浪漫电影叙事」、「ASMR 极致感官微距」、「先锋艺术抽象光影」。如果产品是「跑鞋」，风格可能是：「街头第一人称跑酷」、「专业运动力学解剖」、「赛博朋克夜跑风」。如果产品是「食品」，风格可能是：「极度诱惑的融化流汁特写」、「温馨家庭餐桌故事」、「产地溯源纪录片风」。当前需生成的风格编号为：${styleCfg.name}。请你首先思考该产品在 ${platformStr || "未指定"} 平台上的 3 种完全不同的目标受众心理，然后为当前的 ${styleCfg.name} 量身定制一个专属的、绝不与别类产品撞车的创意视觉风格，并以此作为整条分镜的叙事基调。
 
 【强制叙事模版】：
 - Shot 1 必须是 Hero Shot（产品主体全貌或核心识别形态清晰呈现，禁止无产品空镜开场）。
@@ -1551,7 +1543,7 @@
 - 每一镜 duration 必须为整数；新增镜头须保持叙事流顺滑，并遵守【强制叙事模版】与【剪辑空间锚点】。
 
 【投产级过稿纪律】：
-1. 风格差异化：严格执行 user 消息中的「本套风格动态推演要求」，三套方案不得同质化。
+1. 风格差异化：严格执行本 system 消息中的「动态品类风格裂变法则」，三套方案不得同质化，禁止套用固定风格模板。
 2. 矢量运镜：每镜使用明确术语（Dolly In, Arc Orbit, Rack Focus 等），禁止含糊运镜。
 3. 灯光系统：每镜指定 Lighting Rig，匹配当前产品品类。
 4. duration 为整数物理秒（禁止小数、禁止 duration_weight），全片累加须落在 ${targetMin}-${targetMax}s。${isStyleC ? "Style C 单镜 duration 不得超过 2.5s。" : ""}
@@ -1586,11 +1578,9 @@ ${dynamicPacingBlock}
         usageScenariosForPrompt +
         "\n\n" +
         "⚡【单点多维拆解法则（防注水死命令）】：如果简报提供的卖点很少，绝对禁止拉长单镜时长来凑数！你必须把一个单薄的卖点拆解为 4 个视觉维度分镜呈现：1.物理表象(特写材质) 2.动作触发(如何操作/交互) 3.痛点对比(没有它的惨状) 4.情绪收益(使用后的神态/氛围)。必须用高密度的多维镜头填满时长！\n\n" +
-        "【本套风格动态推演要求：" +
+        "【本套风格编号：" +
         styleCfg.name +
-        "】\n" +
-        styleCfg.focus +
-        "\n\n指令：请仔细观察提供的产品图，结合卖点、品类和平台特性设计分镜。强制要求：1. 严格遵守动态推演的风格设定。2. 在 \`visualDNA\` 中输出一段【顶级英文 DALL-E 生图 Prompt】。3. 每镜 source_image_id 必须与画面语义和素材目录一致。\n" +
+        "】\n请严格遵循 system 中的「动态品类风格裂变法则」，为当前套系量身定制专属创意视觉风格与叙事基调，禁止套用实验室风/佩戴场景/快剪等固定模板。\n\n指令：请仔细观察提供的产品图，结合卖点、品类和平台特性设计分镜。强制要求：1. 严格遵守「动态品类风格裂变法则」。2. 在 \`visualDNA\` 中输出一段【顶级英文 DALL-E 生图 Prompt】。3. 每镜 source_image_id 必须与画面语义和素材目录一致。\n" +
         gridHint;
 
       var userContent = [{ type: "text", text: userTextBlock }];
@@ -2519,148 +2509,27 @@ ${dynamicPacingBlock}
     return "Dynamic angle, motion blur, high contrast dramatic lighting, deep shadows, aggressive composition, extreme visual impact.";
   }
 
-  /** 材质 → 商业摄影级物理/光影约束（供 DALL·E 工业级出图） */
-  var MATERIAL_PROPERTIES_MAP = [
-    {
-      id: "metal",
-      keywords: [
-        "金属",
-        "metal",
-        "steel",
-        "stainless",
-        "aluminum",
-        "aluminium",
-        "钛",
-        "titanium",
-        "铜",
-        "copper",
-        "brass",
-        "chrome",
-        "镀铬",
-        "不锈钢",
-        "铝合金",
-        "合金",
-        "alloy",
-        "gold",
-        "silver",
-        "watch",
-        "腕表",
-        "表壳",
-      ],
-      description:
-        "Material physics (metal): brushed or mirror-polished metallic surfaces with physically accurate specular roll-off, anisotropic micro-scratches, crisp rim-light separation on edges, controlled highlight clipping, true metallic Fresnel response—no plastic or painted-metal look.",
-    },
-    {
-      id: "glass",
-      keywords: [
-        "玻璃",
-        "glass",
-        "crystal",
-        "水晶",
-        "琉璃",
-        "透镜",
-        "lens",
-        "透明",
-        "transparent",
-        "香水瓶",
-        "perfume bottle",
-      ],
-      description:
-        "Material physics (glass): optical-grade clarity with believable refraction and caustics, clean internal reflections, soft gradient highlights on curved walls, zero muddy gray haze, no fake frosted plastic—studio-grade glass product photography.",
-    },
-    {
-      id: "leather",
-      keywords: [
-        "皮革",
-        "leather",
-        "真皮",
-        "牛皮",
-        "羊皮",
-        "suede",
-        "麂皮",
-        "nappa",
-        "皮具",
-        "皮带",
-        "包袋",
-        "handbag",
-      ],
-      description:
-        "Material physics (leather): full-grain pore and wrinkle micro-detail, warm subsurface scattering on hide, matte-to-satin natural sheen, stitched edge catchlights, tactile luxury—never waxy plastic or rubberized fake leather.",
-    },
-    {
-      id: "plastic",
-      keywords: [
-        "塑料",
-        "plastic",
-        "树脂",
-        "resin",
-        "abs",
-        "pc",
-        "polymer",
-        "注塑",
-        "molded",
-        "硅胶",
-        "silicone",
-        "橡胶",
-        "rubber",
-        "tpu",
-      ],
-      description:
-        "Material physics (plastic/polymer): injection-molded parting lines and radii rendered subtly, satin or matte polymer with even subsurface response, accurate soft-specular blobs, no metallic sparkle on polymer unless metallized insert is explicit.",
-    },
-    {
-      id: "fabric",
-      keywords: [
-        "织物",
-        "面料",
-        "布料",
-        "纺织",
-        "fabric",
-        "textile",
-        "cloth",
-        "棉",
-        "cotton",
-        "丝",
-        "silk",
-        "羊毛",
-        "wool",
-        "linen",
-        "denim",
-        "针织",
-        "knit",
-        "羽绒",
-        "down",
-      ],
-      description:
-        "Material physics (fabric/textile): weave and fiber structure resolved at macro scale, soft diffuse albedo, natural fold shadow gradients, no plastic-shine cloth, thread-level realism under controlled studio fill light.",
-    },
-    {
-      id: "liquid",
-      keywords: [
-        "液体",
-        "liquid",
-        "fluid",
-        "水",
-        "water",
-        "乳液",
-        "lotion",
-        "精华",
-        "serum",
-        "油",
-        "oil",
-        "饮料",
-        "beverage",
-        "香水",
-        "perfume",
-        "滴管",
-        "dropper",
-        "泡沫",
-        "foam",
-      ],
-      description:
-        "Material physics (liquid): viscosity-correct meniscus and surface tension, refractive index-true body color, frozen splash or pour caught with high-speed studio strobe, clean meniscus contact line on glass or bottle—no gelatinous or opaque fake liquid.",
-    },
-  ];
+  /** 全行业顶级商业摄影 — 材质 → 物理/光影约束（供 DALL·E 工业级出图） */
+  var MATERIAL_PROPERTIES_MAP = {
+    // 3C/精密制造
+    金属: "brushed metallic surface, anisotropic micro-scratches, sharp highlight edges, premium industrial finish",
+    玻璃: "translucent refractive glass, high-end optical clarity, subtle caustic light reflections, premium oleophobic coating",
+    塑料: "matte finished polymer, uniform light diffusion, high-quality industrial injection molding, soft-touch texture",
+    // 美妆/洗护
+    精华: "macro liquid dynamics, viscous fluid simulation, glowing subsurface scattering, pure luminous backlight",
+    膏霜: "creamy rich texture, macro smudging details, soft diffused ambient occlusion, luxurious skincare photography",
+    粉底: "fine powder particles, velvety matte finish, microscopic skin texture blending, elegant cosmetic lighting",
+    // 珠宝/配饰
+    钻石: "brilliant cut facets, intense chromatic dispersion, macro ray-traced caustics, dark background with spot illumination",
+    皮: "full-grain leather texture, soft natural light absorption, intricate stitch detailing, rich patina finish",
+    // 食品/饮料
+    食品: "appetizing textures, macro food photography, steam or fresh moisture highlights, high-contrast appetizing lighting",
+    水: "dynamic splashing water droplets, high-speed macro photography, crystal clear surface tension, refreshing cool lighting",
+    咖啡: "rich dark espresso tones, golden crema micro-bubbles, warm inviting backlight, macro liquid swirls",
+    // 服饰/布料
+    布料: "macro weave structure, soft fabric draping, gentle rim light on fibers, tactile textile photography",
+    丝绸: "flowing silk folds, liquid-like specular highlights, elegant wave dynamics, luxurious soft illumination",
+  };
 
   var MATERIAL_DEFAULT_COMMERCIAL =
     "Material physics (general product): industrial-grade PBR surface fidelity, controlled studio speculars, micro-texture preserved, color-accurate albedo, no AI-smear or wax-doll artifacts—premium commercial packshot standard.";
@@ -2668,15 +2537,11 @@ ${dynamicPacingBlock}
   function resolveMaterialConstraintLine(productName, category) {
     var hay = (String(productName || "") + " " + String(category || "")).toLowerCase();
     var lines = [];
-    var mi;
-    var ki;
-    for (mi = 0; mi < MATERIAL_PROPERTIES_MAP.length; mi++) {
-      var entry = MATERIAL_PROPERTIES_MAP[mi];
-      for (ki = 0; ki < entry.keywords.length; ki++) {
-        if (hay.indexOf(String(entry.keywords[ki]).toLowerCase()) !== -1) {
-          lines.push(entry.description);
-          break;
-        }
+    var matKey;
+    for (matKey in MATERIAL_PROPERTIES_MAP) {
+      if (!Object.prototype.hasOwnProperty.call(MATERIAL_PROPERTIES_MAP, matKey)) continue;
+      if (hay.indexOf(String(matKey).toLowerCase()) !== -1) {
+        lines.push(MATERIAL_PROPERTIES_MAP[matKey]);
       }
     }
     if (lines.length) return "Physically accurate PBR surface, rim-light edge separation, controlled studio specular roll-off. " + lines.join(" ");
