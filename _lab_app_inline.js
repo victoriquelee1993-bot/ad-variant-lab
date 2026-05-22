@@ -1521,42 +1521,27 @@
         p.category && String(p.category).trim() ? String(p.category).trim() : "未分类";
 
       const systemPrompt =
-        `你是一位身价千万的商业广告导演。你现在的任务是生成一份「初稿即过稿」、可直接投产的商业广告分镜脚本。
+        `你是一位斩获多项戛纳金狮奖的 4A 广告公司顶级创意总监（Creative Director）兼广告导演。你的任务是产出一份可以直接呈现给品牌方高层、达到工业级拍摄标准的商业广告分镜脚本（Shooting Board）。
 
-【动态品类风格裂变法则（核心准则）】：严禁使用诸如「实验室风、佩戴场景、快剪」这种通用且庸俗的固定风格模板。你的 3 套分镜风格必须是基于当前产品【${productLabelForStyle}】及其类目【${categoryLabelForStyle}】深度定制的创意概念！如果产品是「香水」，风格可能是：「法式浪漫电影叙事」、「ASMR 极致感官微距」、「先锋艺术抽象光影」。如果产品是「跑鞋」，风格可能是：「街头第一人称跑酷」、「专业运动力学解剖」、「赛博朋克夜跑风」。如果产品是「食品」，风格可能是：「极度诱惑的融化流汁特写」、「温馨家庭餐桌故事」、「产地溯源纪录片风」。当前需生成的风格编号为：${styleCfg.name}。请你首先思考该产品在 ${platformStr || "未指定"} 平台上的 3 种完全不同的目标受众心理，然后为当前的 ${styleCfg.name} 量身定制一个专属的、绝不与别类产品撞车的创意视觉风格，并以此作为整条分镜的叙事基调。
+【核心铁律：动态品类风格裂变】
+严禁使用诸如「实验室风、快剪」等庸俗、套路化的通用词汇！你必须基于当前产品【${productLabelForStyle}】（类目：【${categoryLabelForStyle}】），为其量身定制独一无二的视觉风格概念，并以此重写顶层的 \`styleName\` 字段。
+例如：香水不叫「氛围风」，应叫「法式新浪潮情绪叙事」；跑鞋不叫「运动风」，应叫「第一人称赛博废土跑酷」。当前你需要处理的是结构框架 ${styleCfg.name}，请用你的创意将其彻底包装。
 
-【强制叙事模版】：
-- Shot 1 必须是 Hero Shot（产品主体全貌或核心识别形态清晰呈现，禁止无产品空镜开场）。
-- 中段镜头必须严格遵循以下叙事链路顺序推进（可多轮循环，不得打乱）：物理表象（特写/材质/结构细节）→ 操作演示（交互/使用/功能触发）→ 痛点解决（前后对比/问题消除）→ 情绪收益（使用后神态/氛围/价值感）。
-- 收尾须在情绪收益或产品终态 Hero 上形成叙事闭环。
+【分镜颗粒度要求（达到 Client-ready 级别）】
+- **Visual (画面内容)**：绝对禁止空泛！必须具体描述：1. 场景陈设(Mise-en-scène) 2. 人物服饰与神态(Wardrobe & Talent) 3. 色彩基调(Color Grading) 4. 产品的绝美呈现状态。例如：「（冷调青蓝光）模特身穿高定丝绒黑裙，指尖轻触磨砂表盘，背景是模糊的东京雨夜霓虹」。
+- **Motion (矢量运镜)**：禁止写「镜头推近」，必须用专业术语：如 Dolly in, Arc orbit 45 degrees, Rack focus from subject to product, Snorkel lens macro crawl。
+- **Lighting (灯光布置)**：写明工业 Rig（如：柔光箱顶灯辅以 Rim light 勾边，动态 Scan light 掠过金属斜面）。
+- **Audio (听觉设计)**：每镜须描述可感知的物理质感 ASMR 音效（如：陶瓷盖轻叩的清脆回响、毛刷扫过织物的沙沙声、液体倒入杯中的咕咚声），与画面情绪同步；禁止空泛的「背景音乐」或「音效」占位。
 
-【剪辑空间锚点】：
-- 每一镜必须输出 start_motion 与 end_motion（纯中文，写明主体空间位置、朝向、景深与动作起止）。
-- Shot N 的 end_motion 与 Shot N+1 的 start_motion 必须在三维空间、主体朝向和运动矢量上保持剪辑连贯，严禁跳轴、瞬移与无故换景。
-- motion 须与 start_motion / end_motion 一致；每一镜必须输出 continuity_check（说明如何承接前一镜 end_motion，或 Hero 起幅锚定逻辑）。
+【叙事模版与节奏】
+- Shot 1 必须是极具视觉冲击力的 Hero Shot 或悬念钩子。
+- 中段遵循：物理表象 → 操作演示/交互 → 痛点反转/感官高潮 → 情绪收益。
+- 时长：必须落在 ${targetMin}-${targetMax} 秒之间。每一镜 duration 必须为整数。严禁为了凑时长而无限拉长单镜，必须通过**增加不同维度的特写、不同视角的用户反应**来填补剧情！
 
-【分镜生成逻辑】：
-【自动剧情补全法则】：
-- 系统推算的本套参考镜头数 targetNodes 约为 ${targetNodes} 镜（创作区间 ${minNodes}–${maxNodes} 镜）。若 targetNodes 大于你当前构思的逻辑剧情点，严禁将现有镜头无限拉长来凑时长。
-- 必须利用「维度拆解法」增加新的剧情段落，而非注水拉长单镜 duration：
-  · 增加「产品细节特写」：从不同物理侧面呈现材质细节。
-  · 增加「使用前后的对比」：呈现用户使用前的不便或与竞品/旧方案的对比环境。
-  · 增加「情绪化反应镜头」：在功能演示后，增加用户满意的神态或使用场景氛围。
-- 每一镜 duration 必须为整数；新增镜头须保持叙事流顺滑，并遵守【强制叙事模版】与【剪辑空间锚点】。
-
-【投产级过稿纪律】：
-1. 风格差异化：严格执行本 system 消息中的「动态品类风格裂变法则」，三套方案不得同质化，禁止套用固定风格模板。
-2. 矢量运镜：每镜使用明确术语（Dolly In, Arc Orbit, Rack Focus 等），禁止含糊运镜。
-3. 灯光系统：每镜指定 Lighting Rig，匹配当前产品品类。
-4. duration 为整数物理秒（禁止小数、禁止 duration_weight），全片累加须落在 ${targetMin}-${targetMax}s。${isStyleC ? "Style C 单镜 duration 不得超过 2.5s。" : ""}
-
-【输出格式】：只输出合法 JSON；visual 为纯中文镜头画面描述。
+【输出格式】
+只输出合法的 JSON，结构包含：\`styleName\` (你定制的专属风格名), \`director_treatment\` (深刻的导演阐述，包含视觉美术与听觉设计理念), \`visualDNA\` (用于 Midjourney 的纯英文超高清摄影提示词基底), \`shots[]\` (镜头数组)。每镜必填：\`source_image_id\`(严格对应素材库), \`visual\`, \`motion\`, \`start_motion\`, \`end_motion\`, \`audio\`, \`lighting\`, \`pacing\`, \`duration\`(整数)。
 ${buildUniversalBindingPromptBlock(catalogSlotCount)}
-${dynamicPacingBlock}
-【技术铁律·解析兼容】顶层含 director_treatment、visualDNA（必填英文 DALL-E Prompt）、shots[]；每镜必填：source_image_id（整数）、matching_reason、duration（整数秒）、visual、motion、start_motion、end_motion、continuity_check。严禁 duration_weight 与 markdown 包裹。
-【输出格式要求】：勿在 visual 内写素材格引用；JSON 须闭合完整。
-
-【整数时长格式化指令】：所有镜头必须定义为 duration（Number 类型，整数），严禁使用 1.5 等小数。你必须在生成 JSON 时就为每个镜头预设好整数时长；若总和不符，请通过增删剧情镜头来匹配，绝不允许在代码后端进行粗暴的比例缩放。`;
+${dynamicPacingBlock}`;
 
       var userTextBlock =
         "【投放平台】：" +
@@ -1582,7 +1567,7 @@ ${dynamicPacingBlock}
         "⚡【单点多维拆解法则（防注水死命令）】：如果简报提供的卖点很少，绝对禁止拉长单镜时长来凑数！你必须把一个单薄的卖点拆解为 4 个视觉维度分镜呈现：1.物理表象(特写材质) 2.动作触发(如何操作/交互) 3.痛点对比(没有它的惨状) 4.情绪收益(使用后的神态/氛围)。必须用高密度的多维镜头填满时长！\n\n" +
         "【本套风格编号：" +
         styleCfg.name +
-        "】\n请严格遵循 system 中的「动态品类风格裂变法则」，为当前套系量身定制专属创意视觉风格与叙事基调，禁止套用实验室风/佩戴场景/快剪等固定模板。\n\n指令：请仔细观察提供的产品图，结合卖点、品类和平台特性设计分镜。强制要求：1. 严格遵守「动态品类风格裂变法则」。2. 在 \`visualDNA\` 中输出一段【顶级英文 DALL-E 生图 Prompt】。3. 每镜 source_image_id 必须与画面语义和素材目录一致。\n" +
+        "】\n请严格遵循 system 中的「动态品类风格裂变」铁律：重写顶层 \`styleName\` 为专属创意名，禁止套用实验室风/快剪等固定模板。\n\n指令：请仔细观察提供的产品图，结合卖点、品类和平台特性设计分镜。强制要求：1. Visual/Motion/Lighting 达到 Client-ready 颗粒度。2. \`visualDNA\` 输出 Midjourney 级英文摄影基底。3. 每镜 \`source_image_id\` 严格对应素材库。\n" +
         gridHint;
 
       var userContent = [{ type: "text", text: userTextBlock }];
@@ -1616,23 +1601,19 @@ ${dynamicPacingBlock}
         var currentSystemPrompt = systemPrompt;
         if (batchCount === 1) {
           currentSystemPrompt +=
-            "\n\n【分批策略死命令】：这是第 1 批，你本次只需输出 " +
+            "\n\n【分批策略指令】：这是第 1 批，本批输出 " +
             shotsToRequest +
-            " 个镜头。严禁提前把全片写完！必须为后续剧情留出空间！";
+            " 个镜头。请按叙事模版展开开篇与中段，为后续批次预留剧情空间；仅输出合法 JSON。";
         } else if (batchCount > 1 && lastShotContext) {
           var deficit = targetNodes - currentShots.length;
           currentSystemPrompt +=
-            "\n\n【分批串联死命令】：这是第 " +
+            "\n\n【分批串联指令】：这是第 " +
             batchCount +
-            " 批请求！警告：你之前的剧情推进太快，总时长严重不足！作为顶级导演，你必须继续深挖产品特性（如材质微观特写、核心痛点放大、极限使用场景、情绪收益等），再追加至少 " +
+            " 批请求。请顺滑承接上一镜，继续横向展开产品的使用场景、材质微观特写或用户情绪反应，补充至少 " +
             Math.min(batchSize, deficit) +
-            " 个全新镜头！\n上一镜（第" +
-            currentShots.length +
-            "镜）画面是：「" +
+            " 个镜头以丰富故事厚度。切勿草草收尾。上一镜的画面是：「" +
             lastShotContext.visual +
-            "」，动作是：「" +
-            lastShotContext.motion +
-            "」。\n请在此基础上顺滑承接，展开新的剧情维度，绝对不要用空镜或纯 Logo 草草收尾！";
+            "」。";
         }
 
         var batchSuccess = false;
@@ -1672,10 +1653,13 @@ ${dynamicPacingBlock}
 
             if (!tempStyleObj.shots || !Array.isArray(tempStyleObj.shots)) throw new Error("本批次缺少分镜数组");
 
-            // 第一批保存最外层的元数据 (DNA & 阐述)
+            // 第一批保存最外层的元数据（含 AI 定制的 styleName）
             if (batchCount === 1) {
                 styleObj.director_treatment = tempStyleObj.director_treatment;
                 styleObj.visualDNA = tempStyleObj.visualDNA;
+                if (tempStyleObj.styleName != null && String(tempStyleObj.styleName).trim()) {
+                  styleObj.styleName = String(tempStyleObj.styleName).trim();
+                }
             }
 
             // 将本批次的镜头拼接到总数组中
@@ -1731,7 +1715,9 @@ ${dynamicPacingBlock}
       try {
         setStoryEngineProgress(styleCfg.name + " 正在进行视觉闭环校验…", 42 + (typeof styleIndex === "number" ? styleIndex : 0) * 26);
 
-        styleObj.styleName = styleCfg.name;
+        if (!styleObj.styleName || !String(styleObj.styleName).trim()) {
+          styleObj.styleName = styleCfg.name;
+        }
         if (styleObj.visualDNA == null) styleObj.visualDNA = "";
         if (styleObj.director_treatment == null || !String(styleObj.director_treatment).trim()) {
           styleObj.director_treatment =
@@ -2990,10 +2976,67 @@ ${dynamicPacingBlock}
     });
   }
 
-  // ================= 导出 Nano Banner 提示词 =================
+  // ================= 导出 Midjourney 商业级提示词 =================
+  function getMidjourneyArFromRatioSelect() {
+    var ratioEl = document.getElementById("ratio-select");
+    var ratioStr = ratioEl ? String(ratioEl.value || "") : "";
+    var ar = "--ar 16:9";
+    if (ratioStr.indexOf("9:16") !== -1) ar = "--ar 9:16";
+    else if (ratioStr.indexOf("16:9") !== -1) ar = "--ar 16:9";
+    else if (ratioStr.indexOf("21:9") !== -1) ar = "--ar 21:9";
+    else if (ratioStr.indexOf("4:5") !== -1) ar = "--ar 4:5";
+    else if (ratioStr.indexOf("2:3") !== -1) ar = "--ar 2:3";
+    else if (ratioStr.indexOf("1:1") !== -1) ar = "--ar 1:1";
+    return ar;
+  }
+
   var btnCopyNanoBannerPrompt = document.getElementById("btnCopyNanoBannerPrompt");
   if (btnCopyNanoBannerPrompt) {
     btnCopyNanoBannerPrompt.addEventListener("click", function () {
+      var data = window.__LAST_STORYBOARD_DATA__;
+      if (!data || !data.length) return alert("暂无分镜数据可复制，请先生成脚本。");
+
+      var activeTabBtn = document.querySelector(".tab-btn.is-active");
+      var sIdx = activeTabBtn ? parseInt(String(activeTabBtn.dataset.tab || "0"), 10) : 0;
+      if (isNaN(sIdx) || sIdx < 0) sIdx = 0;
+
+      var style = data[sIdx];
+      if (!style || !Array.isArray(style.shots) || !style.shots.length) {
+        return alert("当前脚本数据异常，无法提取提示词。");
+      }
+
+      var productEl = document.getElementById("product-input");
+      var productName = (productEl && String(productEl.value || "").trim()) || "luxury product";
+
+      var ar = getMidjourneyArFromRatioSelect();
+      var mjSuffix = " --style raw --v 6.0 --q 2 " + ar;
+
+      var prompts = style.shots
+        .map(function (shot, i) {
+          var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx);
+          return "【SHOT " + (i + 1) + "】\n/imagine prompt: " + drawPrompt + mjSuffix;
+        })
+        .join("\n\n------------------------\n\n");
+
+      navigator.clipboard
+        .writeText(prompts)
+        .then(function () {
+          var originalText = btnCopyNanoBannerPrompt.textContent;
+          btnCopyNanoBannerPrompt.textContent = "✅ 已复制 MJ 提示词！";
+          setTimeout(function () {
+            btnCopyNanoBannerPrompt.textContent = originalText;
+          }, 2000);
+        })
+        .catch(function (err) {
+          alert("复制失败，请检查浏览器剪贴板权限：" + err);
+        });
+    });
+  }
+
+  // ================= 导出 Nano Banner 纯净提示词（无 MJ 参数） =================
+  var btnCopyOriginalNanoBanner = document.getElementById("btnCopyOriginalNanoBanner");
+  if (btnCopyOriginalNanoBanner) {
+    btnCopyOriginalNanoBanner.addEventListener("click", function () {
       var data = window.__LAST_STORYBOARD_DATA__;
       if (!data || !data.length) return alert("暂无分镜数据可复制，请先生成脚本。");
 
@@ -3019,10 +3062,10 @@ ${dynamicPacingBlock}
       navigator.clipboard
         .writeText(prompts)
         .then(function () {
-          var originalText = btnCopyNanoBannerPrompt.textContent;
-          btnCopyNanoBannerPrompt.textContent = "✅ 提示词已全部复制！";
+          var originalText = btnCopyOriginalNanoBanner.textContent;
+          btnCopyOriginalNanoBanner.textContent = "✅ 已复制 Nano Banner 提示词！";
           setTimeout(function () {
-            btnCopyNanoBannerPrompt.textContent = originalText;
+            btnCopyOriginalNanoBanner.textContent = originalText;
           }, 2000);
         })
         .catch(function (err) {
