@@ -39,15 +39,11 @@
   const API_IMAGE_MAX_SIDE = 800;
   const API_IMAGE_JPEG_QUALITY = 0.7;
 
-  /** 等比例缩放后转 JPEG Base64，避免 Vision API 请求体过大 (413) */
+  /** 等比例缩放后转 JPEG Base64（无文件体积拦截，大图由 Canvas 缩至 API_IMAGE_MAX_SIDE） */
   function fileToCompressedBase64(file) {
     return new Promise(function (resolve, reject) {
       if (!file) {
         reject(new Error("无效文件"));
-        return;
-      }
-      if (file.size > 8 * 1024 * 1024) {
-        reject(new Error("图片过大，请上传 8MB 以下的图片"));
         return;
       }
 
@@ -55,38 +51,41 @@
       var img = new Image();
 
       img.onload = function () {
-        try {
-          var maxSide = API_IMAGE_MAX_SIDE;
-          var w = img.naturalWidth || img.width;
-          var h = img.naturalHeight || img.height;
-          if (!w || !h) {
-            reject(new Error("无法读取图片尺寸"));
-            return;
-          }
-          if (w > maxSide || h > maxSide) {
-            if (w >= h) {
-              h = Math.round((h * maxSide) / w);
-              w = maxSide;
-            } else {
-              w = Math.round((w * maxSide) / h);
-              h = maxSide;
+        // 异步闭包：大图解码后让出主线程，再执行 Canvas 缩放，减轻卡顿
+        setTimeout(function () {
+          try {
+            var maxSide = API_IMAGE_MAX_SIDE;
+            var w = img.naturalWidth || img.width;
+            var h = img.naturalHeight || img.height;
+            if (!w || !h) {
+              reject(new Error("无法读取图片尺寸"));
+              return;
             }
+            if (w > maxSide || h > maxSide) {
+              if (w >= h) {
+                h = Math.round((h * maxSide) / w);
+                w = maxSide;
+              } else {
+                w = Math.round((w * maxSide) / h);
+                h = maxSide;
+              }
+            }
+            var canvas = document.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            var ctx = canvas.getContext("2d");
+            if (!ctx) {
+              reject(new Error("Canvas 不可用"));
+              return;
+            }
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL("image/jpeg", API_IMAGE_JPEG_QUALITY));
+          } catch (e) {
+            reject(e);
+          } finally {
+            URL.revokeObjectURL(blobUrl);
           }
-          var canvas = document.createElement("canvas");
-          canvas.width = w;
-          canvas.height = h;
-          var ctx = canvas.getContext("2d");
-          if (!ctx) {
-            reject(new Error("Canvas 不可用"));
-            return;
-          }
-          ctx.drawImage(img, 0, 0, w, h);
-          resolve(canvas.toDataURL("image/jpeg", API_IMAGE_JPEG_QUALITY));
-        } catch (e) {
-          reject(e);
-        } finally {
-          URL.revokeObjectURL(blobUrl);
-        }
+        }, 0);
       };
 
       img.onerror = function () {
