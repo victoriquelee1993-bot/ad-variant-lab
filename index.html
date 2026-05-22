@@ -1459,8 +1459,22 @@
           }
         }
       }
-      if (!headers["Content-Type"] && !headers["content-type"]) {
-        headers["Content-Type"] = "application/json";
+      var requestBody = options.body;
+      var isFormDataBody =
+        typeof FormData !== "undefined" && requestBody instanceof FormData;
+      var isBlobBody = typeof Blob !== "undefined" && requestBody instanceof Blob;
+      var isUrlSearchParamsBody =
+        typeof URLSearchParams !== "undefined" && requestBody instanceof URLSearchParams;
+      if (
+        !isFormDataBody &&
+        !isBlobBody &&
+        !isUrlSearchParamsBody &&
+        !headers["Content-Type"] &&
+        !headers["content-type"]
+      ) {
+        if (requestBody == null || typeof requestBody === "string") {
+          headers["Content-Type"] = "application/json";
+        }
       }
       if (!headers.Accept && !headers.accept) {
         headers.Accept = "application/json";
@@ -3096,13 +3110,6 @@
       }
 
       window.processFiles = handleBriefFiles;
-
-      function clearLlmApiKeyOnExit() {
-        var keyEl = document.getElementById("llm-api-key");
-        if (keyEl) keyEl.value = "";
-      }
-      window.addEventListener("pagehide", clearLlmApiKeyOnExit);
-      window.addEventListener("beforeunload", clearLlmApiKeyOnExit);
 
       syncCategoryFromEngine();
     })();

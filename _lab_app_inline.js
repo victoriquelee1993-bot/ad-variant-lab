@@ -2282,6 +2282,36 @@ ${dynamicPacingBlock}
     });
   }
 
+  /** 429 限流冷却：在 loading 节点上显示秒级倒计时 */
+  function labSleepWithCountdown(ms, loadingEl, messagePrefix) {
+    var totalSec = Math.max(1, Math.ceil(ms / 1000));
+    var prefix = messagePrefix || "限流冷却中";
+    return new Promise(function (resolve) {
+      var left = totalSec;
+      function renderTick() {
+        if (loadingEl) {
+          loadingEl.innerHTML =
+            "<span style='font-size:12px;color:#666;line-height:1.45;text-align:center;padding:8px;display:block;'>" +
+            prefix +
+            "，<strong>" +
+            left +
+            "</strong>s 后自动重试…</span>";
+        }
+      }
+      renderTick();
+      function tick() {
+        left--;
+        if (left <= 0) {
+          resolve();
+          return;
+        }
+        renderTick();
+        setTimeout(tick, 1000);
+      }
+      setTimeout(tick, 1000);
+    });
+  }
+
   function isVisualRateLimitError(err) {
     var msg = String(err && err.message ? err.message : err || "");
     return /\b429\b|rate\s*limit|too many requests/i.test(msg);
@@ -2317,9 +2347,8 @@ ${dynamicPacingBlock}
         })
         .catch(function (err) {
           if (retriesLeft > 0 && isVisualRateLimitError(err)) {
-            loading.innerHTML =
-              "<span style='font-size:12px;color:#666;'>限流冷却中，10s 后重试…</span>";
-            return labSleep(10000).then(function () {
+            return labSleepWithCountdown(10000, loading, "DALL-E 限流冷却中").then(function () {
+              loading.innerHTML = VISUAL_LOADING_HTML;
               return runImageGenAttempt(retriesLeft - 1);
             });
           }
