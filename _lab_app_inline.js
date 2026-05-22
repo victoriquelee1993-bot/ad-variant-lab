@@ -10,6 +10,18 @@
  * 说明：卖点简报 LLM（directorVisionTransformLLM、renderBriefFromParsed）在 index.html 的内联脚本中，不在本文件。
  */
 (function () {
+  // 1. 强制协议检测：防止 file:// 协议导致的 CORS 跨域拦截
+  if (location.protocol === "file:") {
+    var errorMsg =
+      "错误：检测到运行在 file:// 协议下。请使用 Live Server 插件打开此页面，否则 LLM API 无法访问。";
+    console.error(errorMsg);
+    alert(errorMsg);
+    return;
+  }
+
+  // 2. 定义全局中断控制器：用于取消未完成的生成任务
+  let currentStoryboardController = null;
+
   const btnCraftStoryboard = document.getElementById("btnCraftStoryboard");
   if (!btnCraftStoryboard) return;
 
@@ -24,8 +36,8 @@
   var VISUAL_LOADING_HTML =
     "<span style='display:block; animation: pulse 1.5s infinite;'>AI Artist is rendering...</span>";
 
-  const API_IMAGE_MAX_SIDE = 1024;
-  const API_IMAGE_JPEG_QUALITY = 0.8;
+  const API_IMAGE_MAX_SIDE = 800;
+  const API_IMAGE_JPEG_QUALITY = 0.7;
 
   /** 等比例缩放后转 JPEG Base64，避免 Vision API 请求体过大 (413) */
   function fileToCompressedBase64(file) {
@@ -34,41 +46,49 @@
         reject(new Error("无效文件"));
         return;
       }
+      if (file.size > 8 * 1024 * 1024) {
+        reject(new Error("图片过大，请上传 8MB 以下的图片"));
+        return;
+      }
+
       var blobUrl = URL.createObjectURL(file);
       var img = new Image();
+
       img.onload = function () {
-        URL.revokeObjectURL(blobUrl);
-        var w = img.naturalWidth || img.width;
-        var h = img.naturalHeight || img.height;
-        if (!w || !h) {
-          reject(new Error("无法读取图片尺寸"));
-          return;
-        }
-        var maxSide = API_IMAGE_MAX_SIDE;
-        if (w > maxSide || h > maxSide) {
-          if (w >= h) {
-            h = Math.round((h * maxSide) / w);
-            w = maxSide;
-          } else {
-            w = Math.round((w * maxSide) / h);
-            h = maxSide;
-          }
-        }
-        var canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        var ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("Canvas 不可用"));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, w, h);
         try {
+          var maxSide = API_IMAGE_MAX_SIDE;
+          var w = img.naturalWidth || img.width;
+          var h = img.naturalHeight || img.height;
+          if (!w || !h) {
+            reject(new Error("无法读取图片尺寸"));
+            return;
+          }
+          if (w > maxSide || h > maxSide) {
+            if (w >= h) {
+              h = Math.round((h * maxSide) / w);
+              w = maxSide;
+            } else {
+              w = Math.round((w * maxSide) / h);
+              h = maxSide;
+            }
+          }
+          var canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          var ctx = canvas.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Canvas 不可用"));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, w, h);
           resolve(canvas.toDataURL("image/jpeg", API_IMAGE_JPEG_QUALITY));
         } catch (e) {
           reject(e);
+        } finally {
+          URL.revokeObjectURL(blobUrl);
         }
       };
+
       img.onerror = function () {
         URL.revokeObjectURL(blobUrl);
         reject(new Error("图片加载失败"));
@@ -118,8 +138,21 @@
     if (typeof window.llmApiFetch !== "function") {
       throw new Error("llmApiFetch 未加载，请确认 index.html 已引入网络层脚本");
     }
+    options = options || {};
+    if (!options.signal && currentStoryboardController) {
+      options.signal = currentStoryboardController.signal;
+    }
     return window.llmApiFetch(path, options);
   }
+
+  function abortStoryboardGeneration() {
+    if (currentStoryboardController) {
+      currentStoryboardController.abort();
+      currentStoryboardController = null;
+    }
+  }
+
+  window.__abortStoryboardGeneration = abortStoryboardGeneration;
 
   var llmFetchFailAlertShown = false;
 
@@ -127,15 +160,6 @@
     if (llmFetchFailAlertShown || !shouldAlertApiFailure(err)) return;
     llmFetchFailAlertShown = true;
     alert(formatLlmFetchAlertMessage(err, context));
-  }
-
-  function warnIfFileProtocol() {
-    if (typeof location !== "undefined" && location.protocol === "file:") {
-      console.warn(
-        "[分镜引擎] 当前为 file:// 协议。请安装 Live Server，右键 index.html → Open with Live Server，" +
-          "地址栏应显示 http://127.0.0.1:5500/... 而非 file://"
-      );
-    }
   }
 
   /** 通用素材绑定与物理一致性规则（与 .cursorrules.js §7 同源） */
@@ -430,12 +454,14 @@
 
   btnCraftStoryboard.addEventListener("click", async function () {
     if (btnCraftStoryboard.disabled) return;
+    if (currentStoryboardController) currentStoryboardController.abort();
+    currentStoryboardController = new AbortController();
+
     btnCraftStoryboard.disabled = true;
     var originalBtnText = btnCraftStoryboard.textContent;
     btnCraftStoryboard.textContent = "推演中... (请勿重复点击)";
 
     try {
-      warnIfFileProtocol();
       const apiKey =
         typeof window.getLlmApiKeyFromInput === "function"
           ? window.getLlmApiKeyFromInput()
@@ -512,9 +538,14 @@
         clearStoryEngineProgress();
       }, 2200);
     } catch (err) {
-      alert(formatLlmFetchAlertMessage(err, "分镜引擎故障"));
+      console.error("分镜生成异常:", err);
+      var errMsg = err && err.message ? String(err.message) : String(err || "");
+      if (errMsg.indexOf("【已取消】") === -1) {
+        alert(formatLlmFetchAlertMessage(err, "分镜引擎故障"));
+      }
       clearStoryEngineProgress();
     } finally {
+      currentStoryboardController = null;
       setLabBusy(false);
       btnCraftStoryboard.disabled = false;
       btnCraftStoryboard.textContent = originalBtnText;
@@ -549,22 +580,21 @@
     if (host) host.remove();
   }
 
-  /** 结构化提取 + JSON.parse；失败时再试尾逗号修复与括号补全兜底 */
+  /** 结构化提取 + JSON.parse；失败时使用括号补全兜底 */
   function extractAndParseStoryboardJson(raw) {
-    var s = String(raw == null ? "" : raw)
+    var s = String(raw || "")
       .replace(/```json\s*|```/gi, "")
       .trim();
+    // 核心优化：去除可能干扰 JSON 的嵌套转义引号
+    s = s.replace(/\\"/g, "");
+
     var jsonMatch = s.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("AI 返回了非 JSON 格式的废话");
+    if (!jsonMatch) throw new Error("AI 返回了非 JSON 格式内容");
+
     try {
       return JSON.parse(jsonMatch[0]);
     } catch (e) {
-      var repaired = jsonMatch[0].replace(/,\s*([\]}])/g, "$1");
-      try {
-        return JSON.parse(repaired);
-      } catch (e2) {
-        return parseJsonWithClosingBraceRepair(jsonMatch[0]);
-      }
+      return parseJsonWithClosingBraceRepair(jsonMatch[0]);
     }
   }
 
@@ -1533,6 +1563,10 @@ ${dynamicPacingBlock}
             onStyleReady(si, singleStyleObj);
           }
         } catch (styleErr) {
+          var styleErrMsg = styleErr && styleErr.message ? String(styleErr.message) : String(styleErr || "");
+          if (styleErrMsg.indexOf("【已取消】") !== -1) {
+            throw styleErr;
+          }
           console.error(
             "[分镜引擎] " + (stylesToCraft[si] && stylesToCraft[si].name ? stylesToCraft[si].name : "Style " + si) +
               " 生成失败，已跳过本套：",

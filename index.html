@@ -1450,11 +1450,6 @@
             ? window.getLlmApiKeyFromInput()
             : "";
 
-      // 视觉图强制分流（请确保下方字符串替换为你真实的 Xr64 开头的绘画专用 Key）
-      if (path.indexOf("images/generations") !== -1) {
-        apiKey = "sk-stg2...[这里填入你的真实 Key]...";
-      }
-
       var headers = {};
       var hk;
       if (options.headers) {
@@ -1489,6 +1484,7 @@
       var timeoutMs = options.timeout != null ? Number(options.timeout) : 90000;
       if (isNaN(timeoutMs) || timeoutMs <= 0) timeoutMs = 90000;
       var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      var externalSignal = options.signal || null;
       var timeoutId = null;
 
       var init = {
@@ -1501,6 +1497,15 @@
 
       if (controller) {
         init.signal = controller.signal;
+        if (externalSignal) {
+          if (externalSignal.aborted) {
+            controller.abort();
+          } else if (typeof externalSignal.addEventListener === "function") {
+            externalSignal.addEventListener("abort", function () {
+              controller.abort();
+            });
+          }
+        }
         timeoutId = setTimeout(function () {
           controller.abort();
         }, timeoutMs);
@@ -1541,6 +1546,9 @@
       } catch (netErr) {
         if (timeoutId) clearTimeout(timeoutId);
         if (netErr && netErr.name === "AbortError") {
+          if (externalSignal && externalSignal.aborted) {
+            throw new Error("【已取消】操作已被用户中断。");
+          }
           throw new Error(
             "【请求超时】AI 模型在 " + timeoutMs / 1000 + " 秒内未返回结果，请稍后重试。"
           );
@@ -3058,6 +3066,9 @@
 
       if (btnClear && card) {
         btnClear.addEventListener("click", function () {
+          if (typeof window.__abortStoryboardGeneration === "function") {
+            window.__abortStoryboardGeneration();
+          }
           card.querySelectorAll("select").forEach(function (s) {
             s.selectedIndex = 0;
           });
