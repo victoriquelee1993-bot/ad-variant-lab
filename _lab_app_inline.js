@@ -949,7 +949,13 @@
     }
 
     /** 时长宽容区间：Sum∈[lo,hi] 不缩放；偏短缩至 targetIdeal=lo+(hi-lo)*0.4；偏长压至 hi；写回 duration 并剔除 duration_weight */
-    function clampShotDurationsToWindow(shots, targetMin, targetMax, styleOpts) {
+    function clampShotDurationsToWindow(shots, targetMin, targetMax, styleOpts, productName) {
+      var productLabel = String(productName != null ? productName : "").trim();
+      if (!productLabel) {
+        var productInputEl = document.getElementById("product-input");
+        productLabel = productInputEl ? String(productInputEl.value || "").trim() : "";
+      }
+      if (!productLabel) productLabel = "产品";
       if (!Array.isArray(shots) || !shots.length) return;
       var lo = parseFloat(targetMin);
       var hi = parseFloat(targetMax);
@@ -969,18 +975,18 @@
         var styleCMaxTotal = roundDurD(shots.length * STYLE_C_SHOT_CAP_SEC);
         var minShotsNeeded = Math.ceil(lo / STYLE_C_SHOT_CAP_SEC);
         if (styleCMaxTotal < lo - 0.02) {
-          throw new Error(
-            "Style C 物理死锁：当前 " +
+          console.warn(
+            "剧情信息量不足以支撑目标时长，已自动扩展至最高承载剧情段落（Style C：当前 " +
               shots.length +
               " 镜 × " +
               STYLE_C_SHOT_CAP_SEC +
-              "s 上限 = " +
+              "s = " +
               styleCMaxTotal +
-              "s，无法达到目标下限 " +
+              "s < 目标下限 " +
               lo +
-              "s。至少需要 " +
+              "s，建议至少 " +
               minShotsNeeded +
-              " 镜。请重新生成分镜（增加镜头数，禁止拉长单镜）。"
+              " 镜；系统将尝试在末尾补足终章镜头）。"
           );
         }
       }
@@ -1005,9 +1011,37 @@
         }
       }
 
-      /** 整数秒约束：取整为 Number、单镜最少 1s，±1s 微调使总时长严格落在 [lo,hi] 内，严禁小数 */
+      /** 终章定格补镜：Logo 慢动作定格 / Hero 终章（整数秒） */
+      function createFinalHoldShot(holdKind) {
+        var isHero = holdKind === "hero";
+        return {
+          duration: 2,
+          source_image_id: 1,
+          matching_reason: "系统自动补足终章定格镜头以闭合整数时长",
+          visual: isHero
+            ? productLabel + " 最终形态 Hero Shot，产品全貌在棚拍主光下优雅定格收束。"
+            : productLabel + " 品牌 Logo 最终定格，产品质感淡入，优雅收尾。",
+          motion: isHero ? "Dolly Out to Hero Reveal" : "静止不动",
+          start_motion: isHero
+            ? "由上一镜落幅空间延续，产品终章全貌起幅"
+            : "Logo 自虚焦缓慢凝聚于画面中心",
+          end_motion: isHero ? "产品 Hero 全貌稳定落幅" : "Logo 完全清晰慢动作定格",
+          continuity_check: isHero
+            ? "终章补镜：最终形态 Hero Shot，承接前一镜落幅。"
+            : "终章补镜：品牌 Logo 最终定格，承接前一镜落幅。",
+          transition: isHero ? "切" : "叠化",
+          audio: "环境声铺底渐弱",
+          lighting: isHero ? "主光 + 柔 fill" : "Rim Light 轮廓光",
+          pacing: "慢",
+        };
+      }
+
+      /**
+       * 整数时长最终形态：取整 → 超长则从最长镜 -1s → 不足则末尾循环补足定格镜（默认 2s/镜）。
+       */
       function enforceIntegerDuration() {
         var INT_MIN_SHOT = 1;
+        var PAD_DEFAULT_SEC = 2;
         var si;
         var capSi;
         var intLo = Math.ceil(lo);
@@ -1026,9 +1060,10 @@
           return s;
         }
 
+        // 1. 取整（Number 整数，单镜 ≥ 1s，遵守单镜上限）
         for (si = 0; si < shots.length; si++) {
-          var rd = Math.round(parseFloat(shots[si].duration) || 0);
-          if (rd < INT_MIN_SHOT) rd = INT_MIN_SHOT;
+          if (!shots[si]) continue;
+          var rd = Math.max(INT_MIN_SHOT, Math.round(parseFloat(shots[si].duration) || 0));
           capSi = Math.floor(shotMaxDurationCap(shots[si]));
           if (capSi < INT_MIN_SHOT) capSi = INT_MIN_SHOT;
           if (rd > capSi) rd = capSi;
@@ -1036,63 +1071,43 @@
         }
 
         var total = sumIntegerTotal();
-        var intTarget;
-        if (total < intLo) intTarget = intLo;
-        else if (total > intHi) intTarget = intHi;
-        else intTarget = total;
 
-        var maxPasses = Math.max(shots.length * (intHi - intLo + 2), shots.length * 4);
-        var passes = 0;
-        var stuck = 0;
-        var lastTotal = total;
-
-        while (total !== intTarget && passes < maxPasses) {
-          passes++;
-          if (total < intTarget) {
-            var addIdx = -1;
-            var addDur = -1;
-            for (si = 0; si < shots.length; si++) {
-              var curAdd = shots[si].duration;
-              capSi = Math.floor(shotMaxDurationCap(shots[si]));
-              if (curAdd >= capSi) continue;
-              if (curAdd > addDur) {
-                addDur = curAdd;
-                addIdx = si;
-              }
+        // 总长超过上限：从最长镜头每次 -1s 压回（仍保持整数）
+        var trimPasses = 0;
+        while (total > intHi && trimPasses < shots.length * 6) {
+          trimPasses++;
+          var trimIdx = -1;
+          var trimDur = -1;
+          for (si = 0; si < shots.length; si++) {
+            var td = parseInt(shots[si].duration, 10) || 0;
+            if (td <= INT_MIN_SHOT) continue;
+            if (td > trimDur) {
+              trimDur = td;
+              trimIdx = si;
             }
-            if (addIdx < 0) break;
-            shots[addIdx].duration = Number(shots[addIdx].duration) + 1;
-          } else {
-            var subIdx = -1;
-            var subDur = -1;
-            for (si = 0; si < shots.length; si++) {
-              var curSub = shots[si].duration;
-              if (curSub <= INT_MIN_SHOT) continue;
-              if (curSub > subDur) {
-                subDur = curSub;
-                subIdx = si;
-              }
-            }
-            if (subIdx < 0) break;
-            shots[subIdx].duration = Number(shots[subIdx].duration) - 1;
           }
+          if (trimIdx < 0) break;
+          shots[trimIdx].duration = Number(shots[trimIdx].duration) - 1;
           total = sumIntegerTotal();
-          if (total === lastTotal) {
-            stuck++;
-            if (stuck >= 2) break;
-          } else {
-            stuck = 0;
-          }
-          lastTotal = total;
         }
 
-        for (si = 0; si < shots.length; si++) {
-          var fin = Math.round(parseFloat(shots[si].duration) || INT_MIN_SHOT);
-          if (fin < INT_MIN_SHOT) fin = INT_MIN_SHOT;
-          capSi = Math.floor(shotMaxDurationCap(shots[si]));
+        // 2. 不足 targetMin：强制补足终章定格镜头（禁止拉长已有镜头凑数）
+        if (total < intLo) {
+          console.warn("剧情信息量不足以支撑目标时长，已自动扩展至最高承载剧情段落");
+        }
+        var padGuard = 0;
+        var maxPadShots = Math.max(32, Math.ceil((intHi - intLo + 1) / PAD_DEFAULT_SEC) + 4);
+        while (total < intLo && padGuard < maxPadShots) {
+          var padShot = createFinalHoldShot(padGuard % 2 === 0 ? "logo" : "hero");
+          capSi = Math.floor(shotMaxDurationCap(padShot));
           if (capSi < INT_MIN_SHOT) capSi = INT_MIN_SHOT;
-          if (fin > capSi) fin = capSi;
-          shots[si].duration = Number(fin);
+          var needSec = intLo - total;
+          padShot.duration = Number(
+            Math.min(capSi, Math.max(INT_MIN_SHOT, Math.min(PAD_DEFAULT_SEC, needSec)))
+          );
+          shots.push(padShot);
+          total += padShot.duration;
+          padGuard++;
         }
       }
 
@@ -1206,20 +1221,12 @@
           }
         }
         if (totFinal < lo - 0.02) {
-          throw new Error(
-            "Style C 物理死锁：校准后总长 " +
+          console.warn(
+            "剧情信息量不足以支撑目标时长，已自动扩展至最高承载剧情段落（Style C 校准后总长 " +
               totFinal +
-              "s，低于目标下限 " +
+              "s < 目标下限 " +
               lo +
-              "s（" +
-              shots.length +
-              " 镜 × " +
-              STYLE_C_SHOT_CAP_SEC +
-              "s 上限 = " +
-              capSum +
-              "s）。需要至少 " +
-              Math.ceil(lo / STYLE_C_SHOT_CAP_SEC) +
-              " 镜。"
+              "s，将在整数校准阶段补足终章镜头）。"
           );
         }
         if (styleC) assertStyleCShotDurationLimit(shots, "校准后");
@@ -1310,7 +1317,13 @@
     function autoAdjustDuration(styleObj, targetMin, targetMax, styleCfg, p) {
       void p;
       if (!styleObj || !Array.isArray(styleObj.shots) || !styleObj.shots.length) return;
-      clampShotDurationsToWindow(styleObj.shots, targetMin, targetMax, styleCfg);
+      var prod =
+        p && p.product != null
+          ? String(p.product)
+          : (document.getElementById("product-input")
+              ? String(document.getElementById("product-input").value || "")
+              : "");
+      clampShotDurationsToWindow(styleObj.shots, targetMin, targetMax, styleCfg, prod);
     }
 
     /** 兜底：打断连续三镜同一素材格编号（满足防惰性管线约束） */
@@ -1529,6 +1542,15 @@
 - Shot N 的 end_motion 与 Shot N+1 的 start_motion 必须在三维空间、主体朝向和运动矢量上保持剪辑连贯，严禁跳轴、瞬移与无故换景。
 - motion 须与 start_motion / end_motion 一致；每一镜必须输出 continuity_check（说明如何承接前一镜 end_motion，或 Hero 起幅锚定逻辑）。
 
+【分镜生成逻辑】：
+【自动剧情补全法则】：
+- 系统推算的本套参考镜头数 targetNodes 约为 ${targetNodes} 镜（创作区间 ${minNodes}–${maxNodes} 镜）。若 targetNodes 大于你当前构思的逻辑剧情点，严禁将现有镜头无限拉长来凑时长。
+- 必须利用「维度拆解法」增加新的剧情段落，而非注水拉长单镜 duration：
+  · 增加「产品细节特写」：从不同物理侧面呈现材质细节。
+  · 增加「使用前后的对比」：呈现用户使用前的不便或与竞品/旧方案的对比环境。
+  · 增加「情绪化反应镜头」：在功能演示后，增加用户满意的神态或使用场景氛围。
+- 每一镜 duration 必须为整数；新增镜头须保持叙事流顺滑，并遵守【强制叙事模版】与【剪辑空间锚点】。
+
 【投产级过稿纪律】：
 1. 风格差异化：严格执行 user 消息中的「本套风格动态推演要求」，三套方案不得同质化。
 2. 矢量运镜：每镜使用明确术语（Dolly In, Arc Orbit, Rack Focus 等），禁止含糊运镜。
@@ -1539,7 +1561,9 @@
 ${buildUniversalBindingPromptBlock(catalogSlotCount)}
 ${dynamicPacingBlock}
 【技术铁律·解析兼容】顶层含 director_treatment、visualDNA（必填英文 DALL-E Prompt）、shots[]；每镜必填：source_image_id（整数）、matching_reason、duration（整数秒）、visual、motion、start_motion、end_motion、continuity_check。严禁 duration_weight 与 markdown 包裹。
-【输出格式要求】：勿在 visual 内写素材格引用；JSON 须闭合完整。`;
+【输出格式要求】：勿在 visual 内写素材格引用；JSON 须闭合完整。
+
+【整数时长格式化指令】：所有镜头必须定义为 duration（Number 类型，整数），严禁使用 1.5 等小数。你必须在生成 JSON 时就为每个镜头预设好整数时长；若总和不符，请通过增删剧情镜头来匹配，绝不允许在代码后端进行粗暴的比例缩放。`;
 
       var userTextBlock =
         "【投放平台】：" +
@@ -1746,7 +1770,13 @@ ${dynamicPacingBlock}
             }
           }
           setStoryEngineProgress(styleCfg.name + " 正在物理校准总时长…", 78 + (typeof styleIndex === "number" ? styleIndex : 0) * 6);
-          clampShotDurationsToWindow(styleObj.shots, targetMin, targetMax, styleCfg);
+          clampShotDurationsToWindow(
+            styleObj.shots,
+            targetMin,
+            targetMax,
+            styleCfg,
+            String(p.product != null ? p.product : "")
+          );
           for (hi = 0; hi < styleObj.shots.length; hi++) fillDefaultShotFields(styleObj.shots[hi], styleCfg);
           applyStoryboardVisualRewrites(styleObj, p);
           breakTripleConsecutiveGridRefs(styleObj, styleCfg);
