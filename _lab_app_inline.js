@@ -1335,6 +1335,128 @@
       }
     }
 
+    /**
+     * 逻辑冲突自检（非阻塞）：强制对比相邻镜头空间状态。
+     * @param {Array|Object} shotsOrStyle — shots 数组，或含 .shots 的 styleObj
+     */
+    function validateContinuity(shotsOrStyle, styleCfg) {
+      var shots;
+      var styleLabel = "";
+      if (Array.isArray(shotsOrStyle)) {
+        shots = shotsOrStyle;
+        styleLabel =
+          (styleCfg && (styleCfg.styleName || styleCfg.name)) ? String(styleCfg.styleName || styleCfg.name) : "";
+      } else {
+        shots = shotsOrStyle && shotsOrStyle.shots;
+        styleLabel = (shotsOrStyle && shotsOrStyle.styleName) || (styleCfg && (styleCfg.styleName || styleCfg.name)) || "";
+      }
+      if (!Array.isArray(shots) || shots.length < 2) return;
+
+      var TRANSITION_RE =
+        /转场|过渡|匹配剪辑|match\s*cut|跳切|切至|切换|硬切|蒙太奇|叠化|淡入|淡出|dissolve|cross\s*fade|剪辑点|承接|衔接|主观镜头|pov|反应镜头|时间压缩|跳接/i;
+      var MACRO_RE = /特写|微距|大特写|macro|close[- ]?up|detail/i;
+      var WIDE_RE = /全景|远景|大全景|establishing|wide|full[- ]?shot/i;
+      var CONFLICT_RE = /无法承接|不连贯|毫无承接|空间跳跃|无故瞬移|逻辑断裂/i;
+      var RISK_TAG = "需检查：可能存在跳轴风险";
+
+      function hasTransition(text) {
+        return TRANSITION_RE.test(String(text || ""));
+      }
+
+      function scaleOf(text) {
+        var t = String(text || "");
+        if (MACRO_RE.test(t)) return "macro";
+        if (WIDE_RE.test(t)) return "wide";
+        return "neutral";
+      }
+
+      function hasAxisRisk(endText, startText) {
+        var e = String(endText || "");
+        var s = String(startText || "");
+        var eLeft = /(左侧|画面左|向左|左方|viewer\s*left)/i.test(e);
+        var eRight = /(右侧|画面右|向右|右方|viewer\s*right)/i.test(e);
+        var sLeft = /(左侧|画面左|向左|左方|viewer\s*left)/i.test(s);
+        var sRight = /(右侧|画面右|向右|右方|viewer\s*right)/i.test(s);
+        return (eLeft && sRight && !sLeft) || (eRight && sLeft && !sRight);
+      }
+
+      function appendVisualTransitionHint(shot, hint) {
+        var vis = String(shot.visual || "").trim();
+        if (vis.indexOf("转场过渡") !== -1 || vis.indexOf(hint) !== -1) return;
+        shot.visual = vis ? vis + " 【转场过渡】" + hint : "【转场过渡】" + hint;
+      }
+
+      function markContinuityRisk(shot, detail) {
+        var cc = String(shot.continuity_check || "").trim();
+        if (cc.indexOf(RISK_TAG) !== -1) return;
+        shot.continuity_check = cc
+          ? cc + " " + RISK_TAG + (detail ? "（" + detail + "）" : "")
+          : RISK_TAG + (detail ? "（" + detail + "）" : "");
+      }
+
+      var i;
+      for (i = 1; i < shots.length; i++) {
+        var prev = shots[i - 1];
+        var cur = shots[i];
+        if (!prev || !cur) continue;
+
+        var prevVis = String(prev.visual || "");
+        var curVis = String(cur.visual || "");
+        var endM = String(prev.end_motion || prev.motion || "");
+        var startM = String(cur.start_motion || cur.motion || "");
+        var contCheck = String(cur.continuity_check || "");
+        var ctx = endM + " " + startM + " " + contCheck + " " + curVis;
+
+        // 逻辑冲突自检：visual 景别硬跳（特写 → 全景）且缺乏过渡描述
+        if (prevVis.indexOf("特写") !== -1 && curVis.indexOf("全景") !== -1 && !hasTransition(ctx)) {
+          cur.continuity_check = "⚠️ 风险：从特写直接跳全景，建议增加推拉过渡。";
+          contCheck = cur.continuity_check;
+          ctx = endM + " " + startM + " " + contCheck + " " + curVis;
+          appendVisualTransitionHint(cur, "通过推拉镜头过渡");
+        }
+
+        var prevScale = scaleOf(endM);
+        var curScale = scaleOf(startM);
+        var scaleConflict =
+          (prevScale === "macro" && curScale === "wide") || (prevScale === "wide" && curScale === "macro");
+        var transPresent = hasTransition(ctx);
+        var axisRisk = hasAxisRisk(endM, startM);
+
+        if (scaleConflict && !transPresent) {
+          appendVisualTransitionHint(cur, "通过匹配剪辑转场");
+          transPresent = hasTransition(
+            endM + " " + startM + " " + contCheck + " " + String(cur.visual || "")
+          );
+        }
+
+        var unfixable = false;
+        var detail = "";
+
+        if (axisRisk && !transPresent) {
+          unfixable = true;
+          detail = "左右空间朝向冲突且缺乏过渡说明";
+        } else if (scaleConflict && !transPresent) {
+          unfixable = true;
+          detail = "景别跨度大（如特写接全景）且缺乏过渡词";
+        } else if (CONFLICT_RE.test(contCheck) && !hasTransition(contCheck)) {
+          unfixable = true;
+          detail = "continuity_check 自述不连贯且无剪辑解释";
+        }
+
+        if (unfixable) {
+          console.warn(
+            "[validateContinuity] " +
+              (styleLabel || "分镜") +
+              " 第 " +
+              (i + 1) +
+              " 镜衔接风险（前一镜 end_motion → 本镜 start_motion）：",
+            { prevIndex: i, shotIndex: i + 1, end_motion: endM, start_motion: startM, continuity_check: contCheck }
+          );
+          markContinuityRisk(cur, detail);
+        }
+      }
+    }
+
     /** 视觉闭环审计（非阻塞）：冲突已由 applyStoryboardVisualRewrites 就地消歧，此处保留扩展钩子 */
     function validateStoryboardGridVisualClosure(styleObj, styleCfg) {
       void styleObj;
@@ -1410,12 +1532,13 @@
 - 每一镜必须输出 start_motion（起幅：主体空间位置、朝向、景深与动作起点）与 end_motion（落幅：主体空间位置、朝向、景深与动作终点）。
 - 强制法则：Shot N 的 end_motion 与 Shot N+1 的 start_motion 在三维空间坐标、主体朝向、景深焦点与运动矢量上必须逻辑连贯、可剪接对接；严禁跳轴、瞬移、主体无故换人换景。
 - motion 字段须与 start_motion / end_motion 一致，不得自相矛盾。
+- 每一镜必须输出 continuity_check（字符串，纯中文，1–3 句）：简要说明本镜 start_motion 如何从前一镜 end_motion 的空间位置与运动状态**自然承接**；Shot 1 无前一镜时，写明 Hero 起幅的空间锚定逻辑。若存在空间跳跃（景别突变、跳轴、换场景等），必须在 continuity_check 中**明确解释跳跃的剪辑合理性**（例如：硬切剪辑点、匹配剪辑、主观镜头/POV 切换、反应镜头插入、时间压缩蒙太奇等），禁止无法解释的瞬移。
 
 【输出格式】：只输出合法 JSON，visual 描述必须是充满镜头感的纯中文，严禁含糊其辞。第 1 镜须为产品 Hero Shot（见【强制叙事模版】）。
 ${buildUniversalBindingPromptBlock(catalogSlotCount)}
 ${dynamicPacingBlock}
 【物理算数死命令】：所有镜头的 duration 累加总和必须严格落在 ${targetMin}-${targetMax} 秒之间！${isStyleC ? "Style C 单镜 duration 不得超过 2.5s，须用足够镜头数填满总长。" : "非 Style C 可用宫格分屏阵列镜分配较长 duration 吸收总长，禁止少量呆板单镜糊弄。"}
-【技术铁律·解析兼容】顶层含字符串 director_treatment、visualDNA（必填：顶级英文 DALL-E 生图 Prompt）与数组 shots；每镜须含 source_image_id（整数）、matching_reason、duration（物理秒数）、visual（纯中文画面，不含素材格引用）、motion、start_motion、end_motion。严禁 duration_weight！
+【技术铁律·解析兼容】顶层含字符串 director_treatment、visualDNA（必填：顶级英文 DALL-E 生图 Prompt）与数组 shots；每镜须含 source_image_id（整数）、matching_reason、duration（物理秒数）、visual（纯中文画面，不含素材格引用）、motion、start_motion、end_motion、continuity_check（必填：承接/跳跃说明，见【剪辑对齐约束】）。严禁 duration_weight！
 【输出格式要求】：shots 中 source_image_id 必须为整数；不要在 visual 内写任何参考图/素材格描述，引用由后期脚本自动挂载。若 JSON 无法闭合，请在末尾补全所有闭合符号，严禁省略。
 只输出合法 JSON，严禁 markdown 包裹。`;
 
@@ -1628,10 +1751,12 @@ ${dynamicPacingBlock}
           for (hi = 0; hi < styleObj.shots.length; hi++) fillDefaultShotFields(styleObj.shots[hi], styleCfg);
           applyStoryboardVisualRewrites(styleObj, p);
           breakTripleConsecutiveGridRefs(styleObj, styleCfg);
+          validateContinuity(styleObj.shots, styleCfg);
           validateStoryboardGridVisualClosure(styleObj, styleCfg);
         } else {
           applyStoryboardVisualRewrites(styleObj, p);
           breakTripleConsecutiveGridRefs(styleObj, styleCfg);
+          validateContinuity(styleObj.shots, styleCfg);
           validateStoryboardGridVisualClosure(styleObj, styleCfg);
           setStoryEngineProgress(styleCfg.name + " 正在物理校准总时长…", 78 + (typeof styleIndex === "number" ? styleIndex : 0) * 6);
           autoAdjustDuration(styleObj, targetMin, targetMax, styleCfg, p);
@@ -1870,15 +1995,24 @@ ${dynamicPacingBlock}
       var durPill = durRaw ? escapeHtml(durRaw) : "—";
       if (durRaw && !/s$/i.test(durRaw)) durPill += "s";
 
+      var contCheck = String(shot.continuity_check || "");
+      var continuityBadge = /风险|跳轴/.test(contCheck)
+        ? '<span class="tl-continuity-warn" style="display:inline-block;padding:2px 8px;font-size:0.68rem;font-weight:700;line-height:1.35;color:#7a5a00;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;white-space:nowrap;" title="' +
+          escapeHtml(contCheck) +
+          '">⚠️ 连贯性需核查</span>'
+        : "";
+
       html +=
         '<div class="tl-shot" style="margin-bottom:24px;">' +
-        '<div class="tl-shot-head" style="display:flex; justify-content:space-between;">' +
+        '<div class="tl-shot-head" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">' +
         '<span class="tl-no">SHOT ' +
         (i + 1) +
         "</span>" +
+        '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">' +
+        continuityBadge +
         '<span class="tl-pill">' +
         durPill +
-        "</span></div>" +
+        "</span></div></div>" +
         '<div class="tl-visual" style="font-weight:500; margin-top:6px;"><span class="tl-dot"></span>' +
         escapeHtml(shot.visual || "") +
         "</div>" +
