@@ -1005,7 +1005,7 @@
         }
       }
 
-      /** 整数秒约束：取整、单镜最少 1s，通过 ±1s 微调使总时长严格落在 [lo,hi] 内的整数目标 */
+      /** 整数秒约束：取整为 Number、单镜最少 1s，±1s 微调使总时长严格落在 [lo,hi] 内，严禁小数 */
       function enforceIntegerDuration() {
         var INT_MIN_SHOT = 1;
         var si;
@@ -1032,7 +1032,7 @@
           capSi = Math.floor(shotMaxDurationCap(shots[si]));
           if (capSi < INT_MIN_SHOT) capSi = INT_MIN_SHOT;
           if (rd > capSi) rd = capSi;
-          shots[si].duration = rd;
+          shots[si].duration = Number(rd);
         }
 
         var total = sumIntegerTotal();
@@ -1061,7 +1061,7 @@
               }
             }
             if (addIdx < 0) break;
-            shots[addIdx].duration += 1;
+            shots[addIdx].duration = Number(shots[addIdx].duration) + 1;
           } else {
             var subIdx = -1;
             var subDur = -1;
@@ -1074,7 +1074,7 @@
               }
             }
             if (subIdx < 0) break;
-            shots[subIdx].duration -= 1;
+            shots[subIdx].duration = Number(shots[subIdx].duration) - 1;
           }
           total = sumIntegerTotal();
           if (total === lastTotal) {
@@ -1092,7 +1092,7 @@
           capSi = Math.floor(shotMaxDurationCap(shots[si]));
           if (capSi < INT_MIN_SHOT) capSi = INT_MIN_SHOT;
           if (fin > capSi) fin = capSi;
-          shots[si].duration = fin;
+          shots[si].duration = Number(fin);
         }
       }
 
@@ -1357,7 +1357,7 @@
       var MACRO_RE = /特写|微距|大特写|macro|close[- ]?up|detail/i;
       var WIDE_RE = /全景|远景|大全景|establishing|wide|full[- ]?shot/i;
       var CONFLICT_RE = /无法承接|不连贯|毫无承接|空间跳跃|无故瞬移|逻辑断裂/i;
-      var RISK_TAG = "需检查：可能存在跳轴风险";
+      var RISK_TAG = "需检查：跳轴风险";
 
       function hasTransition(text) {
         return TRANSITION_RE.test(String(text || ""));
@@ -1382,16 +1382,16 @@
 
       function appendVisualTransitionHint(shot, hint) {
         var vis = String(shot.visual || "").trim();
-        if (vis.indexOf("转场过渡") !== -1 || vis.indexOf(hint) !== -1) return;
-        shot.visual = vis ? vis + " 【转场过渡】" + hint : "【转场过渡】" + hint;
+        if (vis.indexOf("【转场过渡】") !== -1) return;
+        shot.visual = vis ? vis + " 【转场过渡】" + (hint || "匹配剪辑转场") : "【转场过渡】" + (hint || "匹配剪辑转场");
       }
 
       function markContinuityRisk(shot, detail) {
         var cc = String(shot.continuity_check || "").trim();
-        if (cc.indexOf(RISK_TAG) !== -1) return;
+        if (cc.indexOf("跳轴风险") !== -1 || cc.indexOf(RISK_TAG) !== -1) return;
         shot.continuity_check = cc
-          ? cc + " " + RISK_TAG + (detail ? "（" + detail + "）" : "")
-          : RISK_TAG + (detail ? "（" + detail + "）" : "");
+          ? "⚠️ 风险：" + RISK_TAG + (detail ? "（" + detail + "）" : "") + " " + cc
+          : "⚠️ 风险：" + RISK_TAG + (detail ? "（" + detail + "）" : "");
       }
 
       var i;
@@ -1407,16 +1407,19 @@
         var contCheck = String(cur.continuity_check || "");
         var ctx = endM + " " + startM + " " + contCheck + " " + curVis;
 
-        // 逻辑冲突自检：visual 景别硬跳（特写 → 全景）且缺乏过渡描述
-        if (prevVis.indexOf("特写") !== -1 && curVis.indexOf("全景") !== -1 && !hasTransition(ctx)) {
-          cur.continuity_check = "⚠️ 风险：从特写直接跳全景，建议增加推拉过渡。";
-          contCheck = cur.continuity_check;
-          ctx = endM + " " + startM + " " + contCheck + " " + curVis;
-          appendVisualTransitionHint(cur, "通过推拉镜头过渡");
-        }
-
         var prevScale = scaleOf(endM);
         var curScale = scaleOf(startM);
+        var visualMacroToWide =
+          (prevVis.indexOf("特写") !== -1 && curVis.indexOf("全景") !== -1) ||
+          (prevScale === "macro" && curScale === "wide");
+
+        if (visualMacroToWide && !hasTransition(ctx)) {
+          markContinuityRisk(cur, "特写接全景或 end_motion→start_motion 景别割裂");
+          appendVisualTransitionHint(cur, "通过推拉镜头过渡");
+          contCheck = String(cur.continuity_check || "");
+          ctx = endM + " " + startM + " " + contCheck + " " + String(cur.visual || "");
+        }
+
         var scaleConflict =
           (prevScale === "macro" && curScale === "wide") || (prevScale === "wide" && curScale === "macro");
         var transPresent = hasTransition(ctx);
@@ -1514,33 +1517,29 @@
       }
 
       const systemPrompt =
-        `你是一位身价千万的商业广告导演。你现在的任务是生成一份「初稿即过稿」的专业脚本。
-
-【全行业过稿死命令】：
-1. 风格差异化：三套方案视觉语言、场景与节奏必须差异巨大；严禁三套写成同一口吻。各套须严格执行 user 消息中的「本套风格动态推演要求」。
-2. 矢量运镜：每一镜须含明确镜头运动术语（Dolly In, Arc Orbit, Rack Focus 等），禁止含糊的「镜头动一下」。
-3. 灯光系统：每镜须指定 Lighting Rig，并按**当前产品品类**匹配（勿无脑套用 3C/美妆模板）。
-4. 剪接锚点：Shot N 结束态与 Shot N+1 起幅须可剪接对齐，严禁空间瞬移。
-5. 叙事闭环：结尾须让观众读懂产品价值或最终形态，禁止只有过程无结论。
+        `你是一位身价千万的商业广告导演。你现在的任务是生成一份「初稿即过稿」、可直接投产的商业广告分镜脚本。
 
 【强制叙事模版】：
-- Shot 1（全片第一镜）必须是产品 Hero Shot：主体全貌或核心识别形态一目了然，建立产品与品牌认知锚点；禁止纯空镜、纯风景或无关人物无产品开场。
-- 中间镜头须严格按以下四段叙事阶段顺序推进（可多轮循环，但不得打乱阶段先后）：①物理表象（材质肌理/结构细节/微距特写）→ ②操作演示（交互动作/使用步骤/功能触发）→ ③痛点解决（前后对比/问题消除/差异呈现）→ ④情绪收益（使用后神态/氛围/价值感升华）。每进入下一阶段前，当前阶段须有至少一镜有效覆盖。
-- 收尾镜须在「情绪收益」或产品终态 Hero 上收束，形成完整叙事闭环。
+- Shot 1 必须是 Hero Shot（产品主体全貌或核心识别形态清晰呈现，禁止无产品空镜开场）。
+- 中段镜头必须严格遵循以下叙事链路顺序推进（可多轮循环，不得打乱）：物理表象（特写/材质/结构细节）→ 操作演示（交互/使用/功能触发）→ 痛点解决（前后对比/问题消除）→ 情绪收益（使用后神态/氛围/价值感）。
+- 收尾须在情绪收益或产品终态 Hero 上形成叙事闭环。
 
-【剪辑对齐约束】：
-- 每一镜必须输出 start_motion（起幅：主体空间位置、朝向、景深与动作起点）与 end_motion（落幅：主体空间位置、朝向、景深与动作终点）。
-- 强制法则：Shot N 的 end_motion 与 Shot N+1 的 start_motion 在三维空间坐标、主体朝向、景深焦点与运动矢量上必须逻辑连贯、可剪接对接；严禁跳轴、瞬移、主体无故换人换景。
-- motion 字段须与 start_motion / end_motion 一致，不得自相矛盾。
-- 每一镜必须输出 continuity_check（字符串，纯中文，1–3 句）：简要说明本镜 start_motion 如何从前一镜 end_motion 的空间位置与运动状态**自然承接**；Shot 1 无前一镜时，写明 Hero 起幅的空间锚定逻辑。若存在空间跳跃（景别突变、跳轴、换场景等），必须在 continuity_check 中**明确解释跳跃的剪辑合理性**（例如：硬切剪辑点、匹配剪辑、主观镜头/POV 切换、反应镜头插入、时间压缩蒙太奇等），禁止无法解释的瞬移。
+【剪辑空间锚点】：
+- 每一镜必须输出 start_motion 与 end_motion（纯中文，写明主体空间位置、朝向、景深与动作起止）。
+- Shot N 的 end_motion 与 Shot N+1 的 start_motion 必须在三维空间、主体朝向和运动矢量上保持剪辑连贯，严禁跳轴、瞬移与无故换景。
+- motion 须与 start_motion / end_motion 一致；每一镜必须输出 continuity_check（说明如何承接前一镜 end_motion，或 Hero 起幅锚定逻辑）。
 
-【输出格式】：只输出合法 JSON，visual 描述必须是充满镜头感的纯中文，严禁含糊其辞。第 1 镜须为产品 Hero Shot（见【强制叙事模版】）。
+【投产级过稿纪律】：
+1. 风格差异化：严格执行 user 消息中的「本套风格动态推演要求」，三套方案不得同质化。
+2. 矢量运镜：每镜使用明确术语（Dolly In, Arc Orbit, Rack Focus 等），禁止含糊运镜。
+3. 灯光系统：每镜指定 Lighting Rig，匹配当前产品品类。
+4. duration 为整数物理秒（禁止小数、禁止 duration_weight），全片累加须落在 ${targetMin}-${targetMax}s。${isStyleC ? "Style C 单镜 duration 不得超过 2.5s。" : ""}
+
+【输出格式】：只输出合法 JSON；visual 为纯中文镜头画面描述。
 ${buildUniversalBindingPromptBlock(catalogSlotCount)}
 ${dynamicPacingBlock}
-【物理算数死命令】：所有镜头的 duration 累加总和必须严格落在 ${targetMin}-${targetMax} 秒之间！${isStyleC ? "Style C 单镜 duration 不得超过 2.5s，须用足够镜头数填满总长。" : "非 Style C 可用宫格分屏阵列镜分配较长 duration 吸收总长，禁止少量呆板单镜糊弄。"}
-【技术铁律·解析兼容】顶层含字符串 director_treatment、visualDNA（必填：顶级英文 DALL-E 生图 Prompt）与数组 shots；每镜须含 source_image_id（整数）、matching_reason、duration（物理秒数）、visual（纯中文画面，不含素材格引用）、motion、start_motion、end_motion、continuity_check（必填：承接/跳跃说明，见【剪辑对齐约束】）。严禁 duration_weight！
-【输出格式要求】：shots 中 source_image_id 必须为整数；不要在 visual 内写任何参考图/素材格描述，引用由后期脚本自动挂载。若 JSON 无法闭合，请在末尾补全所有闭合符号，严禁省略。
-只输出合法 JSON，严禁 markdown 包裹。`;
+【技术铁律·解析兼容】顶层含 director_treatment、visualDNA（必填英文 DALL-E Prompt）、shots[]；每镜必填：source_image_id（整数）、matching_reason、duration（整数秒）、visual、motion、start_motion、end_motion、continuity_check。严禁 duration_weight 与 markdown 包裹。
+【输出格式要求】：勿在 visual 内写素材格引用；JSON 须闭合完整。`;
 
       var userTextBlock =
         "【投放平台】：" +
@@ -1737,7 +1736,7 @@ ${dynamicPacingBlock}
             sh.source_image_id = gid;
             var d = parseFloat(sh.duration);
             if (isNaN(d) || d <= 0) d = 2;
-            sh.duration = d;
+            sh.duration = Number(Math.max(1, Math.round(d)));
             if (Object.prototype.hasOwnProperty.call(sh, "duration_weight")) {
               try {
                 delete sh.duration_weight;
@@ -1973,7 +1972,7 @@ ${dynamicPacingBlock}
     const shots = Array.isArray(rawShots) ? rawShots : [];
     var totalSec = 0;
     shots.forEach(function (sh) {
-      totalSec += parseFloat(sh.duration || 0) || 0;
+      totalSec += parseInt(sh.duration, 10) || 0;
     });
 
     var treatment = style.director_treatment != null ? String(style.director_treatment) : "";
@@ -1996,7 +1995,7 @@ ${dynamicPacingBlock}
       if (durRaw && !/s$/i.test(durRaw)) durPill += "s";
 
       var contCheck = String(shot.continuity_check || "");
-      var continuityBadge = /风险|跳轴/.test(contCheck)
+      var continuityBadge = /⚠️\s*风险|需检查：跳轴风险/.test(contCheck)
         ? '<span class="tl-continuity-warn" style="display:inline-block;padding:2px 8px;font-size:0.68rem;font-weight:700;line-height:1.35;color:#7a5a00;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;white-space:nowrap;" title="' +
           escapeHtml(contCheck) +
           '">⚠️ 连贯性需核查</span>'
@@ -2051,7 +2050,7 @@ ${dynamicPacingBlock}
       '<div class="total-dur" style="color:' +
       (isWarn ? "red" : "var(--blue)") +
       '; font-weight:bold; border-top:1px solid #eee; padding-top:12px;">⏱️ 脚本总时长估算：' +
-      totalSec.toFixed(1) +
+      totalSec +
       "s " +
       (isWarn ? "(目标 " + targetMin + "-" + targetMax + "s)" : "✅ 达标") +
       "</div>";
@@ -2651,8 +2650,11 @@ ${dynamicPacingBlock}
         }
       }
     }
-    if (lines.length) return lines.join(" ");
-    return MATERIAL_DEFAULT_COMMERCIAL;
+    if (lines.length) return "Physically accurate PBR surface, rim-light edge separation, controlled studio specular roll-off. " + lines.join(" ");
+    return (
+      "Physically accurate PBR surface, rim-light edge separation, controlled studio specular roll-off. " +
+      MATERIAL_DEFAULT_COMMERCIAL
+    );
   }
 
   function buildVisualDrawPrompt(shot, style, productName, sIdx) {
@@ -2664,11 +2666,14 @@ ${dynamicPacingBlock}
 
     var catEl = document.getElementById("category-input");
     var category = catEl ? String(catEl.value || "").trim() : "";
+    var productLabel = String(productName || "").trim();
 
     var parts = [
       "Hyper-realistic high-end commercial photography, photorealistic masterpiece, shot on ARRI Alexa 65, Zeiss Master Prime lens, 8k resolution, highly detailed.",
     ];
-    parts.push(resolveMaterialConstraintLine(productName, category));
+    parts.push(
+      "Material & lighting rig (from category/product match): " + resolveMaterialConstraintLine(productLabel, category)
+    );
     if (category) parts.push("Industry visual style: Top-tier luxury " + category + " commercial aesthetic, perfectly matching the industry's highest visual standards.");
 
     parts.push("Product exact appearance: " + exactProductDescription + ".");
