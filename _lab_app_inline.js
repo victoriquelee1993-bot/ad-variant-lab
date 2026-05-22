@@ -948,7 +948,7 @@
       );
     }
 
-    /** 时长宽容区间：仅按各镜 duration（物理秒）累加；Sum∈[min,max] 不缩放；偏短/偏长再比例校准；写回 duration 并剔除遗留的 duration_weight */
+    /** 时长宽容区间：Sum∈[lo,hi] 不缩放；偏短缩至 targetIdeal=lo+(hi-lo)*0.4；偏长压至 hi；写回 duration 并剔除 duration_weight */
     function clampShotDurationsToWindow(shots, targetMin, targetMax, styleOpts) {
       if (!Array.isArray(shots) || !shots.length) return;
       var lo = parseFloat(targetMin);
@@ -1005,6 +1005,97 @@
         }
       }
 
+      /** 整数秒约束：取整、单镜最少 1s，通过 ±1s 微调使总时长严格落在 [lo,hi] 内的整数目标 */
+      function enforceIntegerDuration() {
+        var INT_MIN_SHOT = 1;
+        var si;
+        var capSi;
+        var intLo = Math.ceil(lo);
+        var intHi = Math.floor(hi);
+        if (intHi < intLo) {
+          var swapInt = intLo;
+          intLo = intHi;
+          intHi = swapInt;
+        }
+
+        function sumIntegerTotal() {
+          var s = 0;
+          for (si = 0; si < shots.length; si++) {
+            s += parseInt(shots[si].duration, 10) || 0;
+          }
+          return s;
+        }
+
+        for (si = 0; si < shots.length; si++) {
+          var rd = Math.round(parseFloat(shots[si].duration) || 0);
+          if (rd < INT_MIN_SHOT) rd = INT_MIN_SHOT;
+          capSi = Math.floor(shotMaxDurationCap(shots[si]));
+          if (capSi < INT_MIN_SHOT) capSi = INT_MIN_SHOT;
+          if (rd > capSi) rd = capSi;
+          shots[si].duration = rd;
+        }
+
+        var total = sumIntegerTotal();
+        var intTarget;
+        if (total < intLo) intTarget = intLo;
+        else if (total > intHi) intTarget = intHi;
+        else intTarget = total;
+
+        var maxPasses = Math.max(shots.length * (intHi - intLo + 2), shots.length * 4);
+        var passes = 0;
+        var stuck = 0;
+        var lastTotal = total;
+
+        while (total !== intTarget && passes < maxPasses) {
+          passes++;
+          if (total < intTarget) {
+            var addIdx = -1;
+            var addDur = -1;
+            for (si = 0; si < shots.length; si++) {
+              var curAdd = shots[si].duration;
+              capSi = Math.floor(shotMaxDurationCap(shots[si]));
+              if (curAdd >= capSi) continue;
+              if (curAdd > addDur) {
+                addDur = curAdd;
+                addIdx = si;
+              }
+            }
+            if (addIdx < 0) break;
+            shots[addIdx].duration += 1;
+          } else {
+            var subIdx = -1;
+            var subDur = -1;
+            for (si = 0; si < shots.length; si++) {
+              var curSub = shots[si].duration;
+              if (curSub <= INT_MIN_SHOT) continue;
+              if (curSub > subDur) {
+                subDur = curSub;
+                subIdx = si;
+              }
+            }
+            if (subIdx < 0) break;
+            shots[subIdx].duration -= 1;
+          }
+          total = sumIntegerTotal();
+          if (total === lastTotal) {
+            stuck++;
+            if (stuck >= 2) break;
+          } else {
+            stuck = 0;
+          }
+          lastTotal = total;
+        }
+
+        for (si = 0; si < shots.length; si++) {
+          var fin = Math.round(parseFloat(shots[si].duration) || INT_MIN_SHOT);
+          if (fin < INT_MIN_SHOT) fin = INT_MIN_SHOT;
+          capSi = Math.floor(shotMaxDurationCap(shots[si]));
+          if (capSi < INT_MIN_SHOT) capSi = INT_MIN_SHOT;
+          if (fin > capSi) fin = capSi;
+          shots[si].duration = fin;
+        }
+      }
+
       var rawSum = 0;
       var i;
       for (i = 0; i < shots.length; i++) {
@@ -1024,22 +1115,25 @@
         }
         stripWeights();
         if (styleC) assertStyleCShotDurationLimit(shots, "校准后");
+        enforceIntegerDuration();
         return;
       }
 
       if (rawSum >= lo && rawSum <= hi) {
         stripWeights();
         if (styleC) assertStyleCShotDurationLimit(shots, "校准后");
+        enforceIntegerDuration();
         return;
       }
 
       var scale = 1;
+      var targetIdeal = roundDurD(lo + (hi - lo) * 0.4);
       var goal = rawSum;
       if (rawSum < lo) {
-        goal = lo + (hi - lo) * 0.3; // 不贴底线，拉到区间的 30% 处留白
+        goal = targetIdeal; // 不贴底线，缩放至区间 40% 处
         scale = goal / rawSum;
       } else if (rawSum > hi) {
-        goal = hi - (hi - lo) * 0.15; // 不贴顶线，压缩到区间的 85% 处留出呼吸感
+        goal = hi;
         scale = goal / rawSum;
       }
 
@@ -1130,6 +1224,11 @@
         }
         if (styleC) assertStyleCShotDurationLimit(shots, "校准后");
       }
+
+      stripWeights();
+      enforceIntegerDuration();
+      stripWeights();
+      if (styleC) assertStyleCShotDurationLimit(shots, "整数校准后");
     }
 
     /**
@@ -1302,11 +1401,21 @@
 4. 剪接锚点：Shot N 结束态与 Shot N+1 起幅须可剪接对齐，严禁空间瞬移。
 5. 叙事闭环：结尾须让观众读懂产品价值或最终形态，禁止只有过程无结论。
 
-【输出格式】：只输出合法 JSON，visual 描述必须是充满镜头感的纯中文，严禁含糊其辞。第 1 镜须直接呈现产品本体或可读的局部核心（禁止纯人物/纯风景无产品前摇）。
+【强制叙事模版】：
+- Shot 1（全片第一镜）必须是产品 Hero Shot：主体全貌或核心识别形态一目了然，建立产品与品牌认知锚点；禁止纯空镜、纯风景或无关人物无产品开场。
+- 中间镜头须严格按以下四段叙事阶段顺序推进（可多轮循环，但不得打乱阶段先后）：①物理表象（材质肌理/结构细节/微距特写）→ ②操作演示（交互动作/使用步骤/功能触发）→ ③痛点解决（前后对比/问题消除/差异呈现）→ ④情绪收益（使用后神态/氛围/价值感升华）。每进入下一阶段前，当前阶段须有至少一镜有效覆盖。
+- 收尾镜须在「情绪收益」或产品终态 Hero 上收束，形成完整叙事闭环。
+
+【剪辑对齐约束】：
+- 每一镜必须输出 start_motion（起幅：主体空间位置、朝向、景深与动作起点）与 end_motion（落幅：主体空间位置、朝向、景深与动作终点）。
+- 强制法则：Shot N 的 end_motion 与 Shot N+1 的 start_motion 在三维空间坐标、主体朝向、景深焦点与运动矢量上必须逻辑连贯、可剪接对接；严禁跳轴、瞬移、主体无故换人换景。
+- motion 字段须与 start_motion / end_motion 一致，不得自相矛盾。
+
+【输出格式】：只输出合法 JSON，visual 描述必须是充满镜头感的纯中文，严禁含糊其辞。第 1 镜须为产品 Hero Shot（见【强制叙事模版】）。
 ${buildUniversalBindingPromptBlock(catalogSlotCount)}
 ${dynamicPacingBlock}
 【物理算数死命令】：所有镜头的 duration 累加总和必须严格落在 ${targetMin}-${targetMax} 秒之间！${isStyleC ? "Style C 单镜 duration 不得超过 2.5s，须用足够镜头数填满总长。" : "非 Style C 可用宫格分屏阵列镜分配较长 duration 吸收总长，禁止少量呆板单镜糊弄。"}
-【技术铁律·解析兼容】顶层含字符串 director_treatment、visualDNA（必填：顶级英文 DALL-E 生图 Prompt）与数组 shots；每镜须含 source_image_id（整数）、matching_reason、duration（物理秒数）、visual（纯中文画面，不含素材格引用）、motion。严禁 duration_weight！
+【技术铁律·解析兼容】顶层含字符串 director_treatment、visualDNA（必填：顶级英文 DALL-E 生图 Prompt）与数组 shots；每镜须含 source_image_id（整数）、matching_reason、duration（物理秒数）、visual（纯中文画面，不含素材格引用）、motion、start_motion、end_motion。严禁 duration_weight！
 【输出格式要求】：shots 中 source_image_id 必须为整数；不要在 visual 内写任何参考图/素材格描述，引用由后期脚本自动挂载。若 JSON 无法闭合，请在末尾补全所有闭合符号，严禁省略。
 只输出合法 JSON，严禁 markdown 包裹。`;
 
@@ -1504,13 +1613,14 @@ ${dynamicPacingBlock}
             if (galleryCountPad > 0 && gid > galleryCountPad) gid = galleryCountPad;
             sh.source_image_id = gid;
             var d = parseFloat(sh.duration);
-            if (isNaN(d) || d <= 0) d = parseFloat(sh.duration_weight);
             if (isNaN(d) || d <= 0) d = 2;
             sh.duration = d;
-            try {
-              delete sh.duration_weight;
-            } catch (eDw) {
-              sh.duration_weight = void 0;
+            if (Object.prototype.hasOwnProperty.call(sh, "duration_weight")) {
+              try {
+                delete sh.duration_weight;
+              } catch (eDw) {
+                sh.duration_weight = void 0;
+              }
             }
           }
           setStoryEngineProgress(styleCfg.name + " 正在物理校准总时长…", 78 + (typeof styleIndex === "number" ? styleIndex : 0) * 6);
@@ -2247,6 +2357,170 @@ ${dynamicPacingBlock}
     return "Dynamic angle, motion blur, high contrast dramatic lighting, deep shadows, aggressive composition, extreme visual impact.";
   }
 
+  /** 材质 → 商业摄影级物理/光影约束（供 DALL·E 工业级出图） */
+  var MATERIAL_PROPERTIES_MAP = [
+    {
+      id: "metal",
+      keywords: [
+        "金属",
+        "metal",
+        "steel",
+        "stainless",
+        "aluminum",
+        "aluminium",
+        "钛",
+        "titanium",
+        "铜",
+        "copper",
+        "brass",
+        "chrome",
+        "镀铬",
+        "不锈钢",
+        "铝合金",
+        "合金",
+        "alloy",
+        "gold",
+        "silver",
+        "watch",
+        "腕表",
+        "表壳",
+      ],
+      description:
+        "Material physics (metal): brushed or mirror-polished metallic surfaces with physically accurate specular roll-off, anisotropic micro-scratches, crisp rim-light separation on edges, controlled highlight clipping, true metallic Fresnel response—no plastic or painted-metal look.",
+    },
+    {
+      id: "glass",
+      keywords: [
+        "玻璃",
+        "glass",
+        "crystal",
+        "水晶",
+        "琉璃",
+        "透镜",
+        "lens",
+        "透明",
+        "transparent",
+        "香水瓶",
+        "perfume bottle",
+      ],
+      description:
+        "Material physics (glass): optical-grade clarity with believable refraction and caustics, clean internal reflections, soft gradient highlights on curved walls, zero muddy gray haze, no fake frosted plastic—studio-grade glass product photography.",
+    },
+    {
+      id: "leather",
+      keywords: [
+        "皮革",
+        "leather",
+        "真皮",
+        "牛皮",
+        "羊皮",
+        "suede",
+        "麂皮",
+        "nappa",
+        "皮具",
+        "皮带",
+        "包袋",
+        "handbag",
+      ],
+      description:
+        "Material physics (leather): full-grain pore and wrinkle micro-detail, warm subsurface scattering on hide, matte-to-satin natural sheen, stitched edge catchlights, tactile luxury—never waxy plastic or rubberized fake leather.",
+    },
+    {
+      id: "plastic",
+      keywords: [
+        "塑料",
+        "plastic",
+        "树脂",
+        "resin",
+        "abs",
+        "pc",
+        "polymer",
+        "注塑",
+        "molded",
+        "硅胶",
+        "silicone",
+        "橡胶",
+        "rubber",
+        "tpu",
+      ],
+      description:
+        "Material physics (plastic/polymer): injection-molded parting lines and radii rendered subtly, satin or matte polymer with even subsurface response, accurate soft-specular blobs, no metallic sparkle on polymer unless metallized insert is explicit.",
+    },
+    {
+      id: "fabric",
+      keywords: [
+        "织物",
+        "面料",
+        "布料",
+        "纺织",
+        "fabric",
+        "textile",
+        "cloth",
+        "棉",
+        "cotton",
+        "丝",
+        "silk",
+        "羊毛",
+        "wool",
+        "linen",
+        "denim",
+        "针织",
+        "knit",
+        "羽绒",
+        "down",
+      ],
+      description:
+        "Material physics (fabric/textile): weave and fiber structure resolved at macro scale, soft diffuse albedo, natural fold shadow gradients, no plastic-shine cloth, thread-level realism under controlled studio fill light.",
+    },
+    {
+      id: "liquid",
+      keywords: [
+        "液体",
+        "liquid",
+        "fluid",
+        "水",
+        "water",
+        "乳液",
+        "lotion",
+        "精华",
+        "serum",
+        "油",
+        "oil",
+        "饮料",
+        "beverage",
+        "香水",
+        "perfume",
+        "滴管",
+        "dropper",
+        "泡沫",
+        "foam",
+      ],
+      description:
+        "Material physics (liquid): viscosity-correct meniscus and surface tension, refractive index-true body color, frozen splash or pour caught with high-speed studio strobe, clean meniscus contact line on glass or bottle—no gelatinous or opaque fake liquid.",
+    },
+  ];
+
+  var MATERIAL_DEFAULT_COMMERCIAL =
+    "Material physics (general product): industrial-grade PBR surface fidelity, controlled studio speculars, micro-texture preserved, color-accurate albedo, no AI-smear or wax-doll artifacts—premium commercial packshot standard.";
+
+  function resolveMaterialConstraintLine(productName, category) {
+    var hay = (String(productName || "") + " " + String(category || "")).toLowerCase();
+    var lines = [];
+    var mi;
+    var ki;
+    for (mi = 0; mi < MATERIAL_PROPERTIES_MAP.length; mi++) {
+      var entry = MATERIAL_PROPERTIES_MAP[mi];
+      for (ki = 0; ki < entry.keywords.length; ki++) {
+        if (hay.indexOf(String(entry.keywords[ki]).toLowerCase()) !== -1) {
+          lines.push(entry.description);
+          break;
+        }
+      }
+    }
+    if (lines.length) return lines.join(" ");
+    return MATERIAL_DEFAULT_COMMERCIAL;
+  }
+
   function buildVisualDrawPrompt(shot, style, productName, sIdx) {
     var cleanVisual = String(shot.visual || "").replace(/\(参考素材格[^)]+\)/g, "").trim();
     var exactProductDescription =
@@ -2260,6 +2534,7 @@ ${dynamicPacingBlock}
     var parts = [
       "Hyper-realistic high-end commercial photography, photorealistic masterpiece, shot on ARRI Alexa 65, Zeiss Master Prime lens, 8k resolution, highly detailed.",
     ];
+    parts.push(resolveMaterialConstraintLine(productName, category));
     if (category) parts.push("Industry visual style: Top-tier luxury " + category + " commercial aesthetic, perfectly matching the industry's highest visual standards.");
 
     parts.push("Product exact appearance: " + exactProductDescription + ".");
