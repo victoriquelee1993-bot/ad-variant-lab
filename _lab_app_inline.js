@@ -1075,14 +1075,16 @@
           total = sumIntegerTotal();
         }
 
-        // 2. 不足 targetMin：强制补足终章定格镜头（禁止拉长已有镜头凑数）
+        // 2. 不足 targetMin：交由前端兜底时，最多只允许补足一次收尾，坚决拒绝无限重复补帧！
         if (total < intLo) {
-          console.warn("剧情信息量不足以支撑目标时长，已自动扩展至最高承载剧情段落");
+          console.warn("AI 最终生成的总信息量偏少。将仅追加一次优雅收尾，拒绝无限横跳。");
         }
         var padGuard = 0;
-        var maxPadShots = Math.max(32, Math.ceil((intHi - intLo + 1) / PAD_DEFAULT_SEC) + 4);
+        // 核心修改：最多 2 次（1 次 Hero + 1 次 Logo），时长未凑够也直接跳出
+        var maxPadShots = 2;
         while (total < intLo && padGuard < maxPadShots) {
-          var padShot = createFinalHoldShot(padGuard % 2 === 0 ? "logo" : "hero");
+          // 优先 Hero 定格收尾，其次 Logo
+          var padShot = createFinalHoldShot(padGuard === 0 ? "hero" : "logo");
           capSi = Math.floor(shotMaxDurationCap(padShot));
           if (capSi < INT_MIN_SHOT) capSi = INT_MIN_SHOT;
           var needSec = intLo - total;
@@ -1600,7 +1602,7 @@ ${dynamicPacingBlock}
       var maxBatches = Math.ceil(targetNodes / batchSize) + 1; // 防死循环兜底
       var lastShotContext = null;
 
-      while (currentShots.length < minNodes && batchCount < maxBatches) {
+      while (currentShots.length < targetNodes && batchCount < maxBatches) {
         batchCount++;
         var stopBatching = false;
         var shotsToRequest = Math.min(batchSize, maxNodes - currentShots.length);
@@ -1616,20 +1618,21 @@ ${dynamicPacingBlock}
           currentSystemPrompt +=
             "\n\n【分批策略死命令】：这是第 1 批，你本次只需输出 " +
             shotsToRequest +
-            " 个镜头。严禁提前把全片写完！";
+            " 个镜头。严禁提前把全片写完！必须为后续剧情留出空间！";
         } else if (batchCount > 1 && lastShotContext) {
+          var deficit = targetNodes - currentShots.length;
           currentSystemPrompt +=
             "\n\n【分批串联死命令】：这是第 " +
             batchCount +
-            " 批请求，请接着上一批继续写！你本次只需输出 " +
-            shotsToRequest +
-            " 个镜头。上一镜（第" +
+            " 批请求！警告：你之前的剧情推进太快，总时长严重不足！作为顶级导演，你必须继续深挖产品特性（如材质微观特写、核心痛点放大、极限使用场景、情绪收益等），再追加至少 " +
+            Math.min(batchSize, deficit) +
+            " 个全新镜头！\n上一镜（第" +
             currentShots.length +
             "镜）画面是：「" +
             lastShotContext.visual +
             "」，动作是：「" +
             lastShotContext.motion +
-            "」。请确保本批次第 1 镜与上一镜在动作和空间上完美衔接！";
+            "」。\n请在此基础上顺滑承接，展开新的剧情维度，绝对不要用空镜或纯 Logo 草草收尾！";
         }
 
         var batchSuccess = false;
@@ -1677,10 +1680,13 @@ ${dynamicPacingBlock}
 
             // 将本批次的镜头拼接到总数组中
             currentShots = currentShots.concat(tempStyleObj.shots);
-            if (tempStyleObj.shots.length < shotsToRequest) {
-              stopBatching = true; // AI 自发完结，不再强行逼迫其凑镜头数
+
+            // 修复 AI 偷懒：仅当彻底吐不出新镜头，或总数达到 targetNodes 时才停止
+            if (tempStyleObj.shots.length === 0) {
+              console.warn("AI 彻底停止输出新镜头，强制结束本轮批次。");
+              stopBatching = true;
             }
-            if (currentShots.length >= minNodes) {
+            if (currentShots.length >= targetNodes) {
               stopBatching = true;
             }
 
@@ -1703,7 +1709,7 @@ ${dynamicPacingBlock}
             console.warn(`[分批中断] ${styleCfg.name} 第 ${batchCount} 批次彻底失败，带着已生成的 ${currentShots.length} 镜强行进入后续时长校准。`);
             break;
         }
-        if (stopBatching || currentShots.length >= minNodes) {
+        if (stopBatching || currentShots.length >= targetNodes) {
           break;
         }
       }
