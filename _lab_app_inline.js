@@ -2989,4 +2989,45 @@ ${dynamicPacingBlock}
       });
     });
   }
+
+  // ================= 导出 Nano Banner 提示词 =================
+  var btnCopyNanoBannerPrompt = document.getElementById("btnCopyNanoBannerPrompt");
+  if (btnCopyNanoBannerPrompt) {
+    btnCopyNanoBannerPrompt.addEventListener("click", function () {
+      var data = window.__LAST_STORYBOARD_DATA__;
+      if (!data || !data.length) return alert("暂无分镜数据可复制，请先生成脚本。");
+
+      var activeTabBtn = document.querySelector(".tab-btn.is-active");
+      var sIdx = activeTabBtn ? parseInt(String(activeTabBtn.dataset.tab || "0"), 10) : 0;
+      if (isNaN(sIdx) || sIdx < 0) sIdx = 0;
+
+      var style = data[sIdx];
+      if (!style || !Array.isArray(style.shots) || !style.shots.length) {
+        return alert("当前脚本数据异常，无法提取提示词。");
+      }
+
+      var productEl = document.getElementById("product-input");
+      var productName = (productEl && String(productEl.value || "").trim()) || "luxury product";
+
+      var prompts = style.shots
+        .map(function (shot, i) {
+          var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx);
+          return "【SHOT " + (i + 1) + "】\n" + drawPrompt;
+        })
+        .join("\n\n------------------------\n\n");
+
+      navigator.clipboard
+        .writeText(prompts)
+        .then(function () {
+          var originalText = btnCopyNanoBannerPrompt.textContent;
+          btnCopyNanoBannerPrompt.textContent = "✅ 提示词已全部复制！";
+          setTimeout(function () {
+            btnCopyNanoBannerPrompt.textContent = originalText;
+          }, 2000);
+        })
+        .catch(function (err) {
+          alert("复制失败，请检查浏览器剪贴板权限：" + err);
+        });
+    });
+  }
 })();
