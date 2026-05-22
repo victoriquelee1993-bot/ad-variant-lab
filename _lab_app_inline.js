@@ -997,6 +997,12 @@
         return;
       }
 
+      if (rawSum >= lo && rawSum <= hi) {
+        stripWeights();
+        if (styleC) assertStyleCShotDurationLimit(shots, "校准后");
+        return;
+      }
+
       var scale = 1;
       var goal = rawSum;
       if (rawSum < lo) {
@@ -1322,6 +1328,7 @@ ${dynamicPacingBlock}
 
       while (currentShots.length < minNodes && batchCount < maxBatches) {
         batchCount++;
+        var stopBatching = false;
         var shotsToRequest = Math.min(batchSize, maxNodes - currentShots.length);
 
         setStoryEngineProgress(
@@ -1397,7 +1404,10 @@ ${dynamicPacingBlock}
             // 将本批次的镜头拼接到总数组中
             currentShots = currentShots.concat(tempStyleObj.shots);
             if (tempStyleObj.shots.length < shotsToRequest) {
-              batchCount = maxBatches; // AI 自发完结，不再强行逼迫其凑镜头数
+              stopBatching = true; // AI 自发完结，不再强行逼迫其凑镜头数
+            }
+            if (currentShots.length >= minNodes) {
+              stopBatching = true;
             }
 
             // 记录本批最后一镜，供下一次循环承接使用
@@ -1417,7 +1427,10 @@ ${dynamicPacingBlock}
         // 如果某一整个批次连续失败，直接打断 while，拿着已有的镜头强行往下走，绝不抛错卡死！
         if (!batchSuccess) {
             console.warn(`[分批中断] ${styleCfg.name} 第 ${batchCount} 批次彻底失败，带着已生成的 ${currentShots.length} 镜强行进入后续时长校准。`);
-            break; 
+            break;
+        }
+        if (stopBatching || currentShots.length >= minNodes) {
+          break;
         }
       }
 

@@ -1450,8 +1450,9 @@
             ? window.getLlmApiKeyFromInput()
             : "";
 
+      // 视觉图强制分流（请确保下方字符串替换为你真实的 Xr64 开头的绘画专用 Key）
       if (path.indexOf("images/generations") !== -1) {
-        apiKey = "sk-stg2XXXXXXXXXX";
+        apiKey = "sk-stg2...[这里填入你的真实 Key]...";
       }
 
       var headers = {};
