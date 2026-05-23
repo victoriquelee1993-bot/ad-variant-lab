@@ -1,5 +1,5 @@
 /**
- * Ad Variant Lab - Director's Creative Engine (V2.0)
+ * Ad Variant Lab - Director's Creative Engine (V2.3 - 终极无卡死闭环版)
  * 完全对齐 .cursorrules.js 工业标准：
  * 1. 矢量化运动 (Vectorized Motion)
  * 2. 智能光影系统 (Lighting Rig)
@@ -1070,7 +1070,16 @@
 
           if (expIdx < 0) {
             if (shots.length) {
-              shots[shots.length - 1].duration = Number(shots[shots.length - 1].duration) + 1;
+              var lastIdx = shots.length - 1;
+              var curLastD = parseInt(shots[lastIdx].duration, 10) || 0;
+              var lastCap = Math.floor(shotMaxDurationCap(shots[lastIdx]));
+              if (curLastD >= lastCap) {
+                if (styleC) {
+                  console.warn("Style C 补短极限保护启动，防止断言卡死。");
+                }
+                break;
+              }
+              shots[lastIdx].duration = Number(curLastD + 1);
               total++;
             } else {
               break;
@@ -1482,13 +1491,15 @@
         avgShotLen = isShortVideo ? 2.0 : 3.0;
       }
 
+      var STYLE_C_SHOT_SEC = 2.5;
       var dynamicTargetDur = targetMin + (targetMax - targetMin) * (isStyleC ? 0.9 : 0.6);
       var targetNodes = Math.ceil(dynamicTargetDur / avgShotLen);
       var minNodes = Math.max(4, targetNodes - 2);
       var maxNodes = Math.min(20, targetNodes + 3);
       if (isStyleC) {
-        minNodes = Math.max(6, Math.ceil(targetMin / 2.5));
-        maxNodes = Math.min(25, minNodes + 5);
+        minNodes = Math.max(18, Math.ceil(targetMin / STYLE_C_SHOT_SEC));
+        targetNodes = Math.max(24, Math.ceil(targetMax / 1.8));
+        maxNodes = 35;
       }
 
       setStoryEngineProgress(
@@ -1587,7 +1598,9 @@
           targetMin +
           "-" +
           targetMax +
-          "s 的总长。严禁在早期镜头草草收尾！少于 " +
+          "s 的总长。本套风格必须精准产出具有高密度剧情的 " +
+          targetNodes +
+          " 个镜头段落！严禁在早期镜头草草收尾！少于 " +
           minNodes +
           " 镜将被判定为严重生产事故！\n";
       } else {
@@ -1633,13 +1646,14 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
       var currentShots = [];
       var batchSize = 12; // 绝对安全区：每次最多逼 AI 吐 12 镜，防断流
       var batchCount = 0;
-      var maxBatches = Math.ceil(targetNodes / batchSize) + 1; // 防死循环兜底
+      var maxBatches = isStyleC ? 8 : Math.ceil(targetNodes / batchSize) + 1; // Style C：最多 8 批接力，网络闪断时继续补齐
       var lastShotContext = null;
 
       while (currentShots.length < targetNodes && batchCount < maxBatches) {
         batchCount++;
         var stopBatching = false;
-        var shotsToRequest = Math.min(batchSize, maxNodes - currentShots.length);
+        var shotsToRequest = Math.min(batchSize, targetNodes - currentShots.length);
+        if (shotsToRequest <= 0) break;
 
         setStoryEngineProgress(
           styleCfg.name + " 正在分批生成 (第 " + batchCount + " 批)... 已完成 " + currentShots.length + "/" + targetNodes + " 镜",
@@ -1783,7 +1797,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
             currentShots = currentShots.concat(tempStyleObj.shots);
 
             if (tempStyleObj.shots.length === 0) {
-              stopBatching = true;
+              console.warn("[批次断流] " + styleCfg.name + " 第 " + batchCount + " 批返回 0 镜，继续下一批接力。");
             }
             if (currentShots.length >= targetNodes) {
               stopBatching = true;
@@ -1804,15 +1818,17 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
 
         if (!batchSuccess) {
           console.warn(
-            "[分批中断] " +
+            "[批次断流] " +
               styleCfg.name +
               " 第 " +
               batchCount +
-              " 批次彻底失败，带着已生成的 " +
+              " 批次请求失败，已生成 " +
               currentShots.length +
-              " 镜强行进入后续时长校准。"
+              "/" +
+              targetNodes +
+              " 镜，继续下一批接力。"
           );
-          break;
+          continue;
         }
         if (stopBatching || currentShots.length >= targetNodes) {
           break;
