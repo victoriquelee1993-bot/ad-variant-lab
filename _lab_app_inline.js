@@ -1493,54 +1493,110 @@
         8 + (typeof styleIndex === "number" ? styleIndex : 0) * 28
       );
 
+      // ================= 核心重构：投放环境、画幅比例与全类目创意彻底解耦模型 =================
+      var platformStr = String(p.platform || "通用平台");
+      var ratioStr = String(p.ratio || "16:9");
+      var productLabelForStyle = String(p.product != null ? p.product : "未填写");
+      var categoryLabelForStyle = p.category && String(p.category).trim() ? String(p.category).trim() : "通用类目";
+
+      var isShortVideoPool = /TikTok|Reels|Shorts|小红书|Instagram/i.test(platformStr);
+      var isEcomListing = /Amazon|Listing|PDP|AliExpress|Temu|Shopify/i.test(platformStr);
+
+      var platformHookRule = "";
+      if (isShortVideoPool) {
+        platformHookRule =
+          "【开场铁律 · 短视频信息流钩子机制】：当前投放平台为【" +
+          platformStr +
+          "】。用户划走率极高！第一镜（开场前3秒）必须使用【最强烈、最高能的产品局部动态、极限材质反光或高感知物理动作】作为黄金钩子，严禁任何长时间的环境空镜铺垫，第一秒必须锁定视线！";
+      } else if (isEcomListing) {
+        platformHookRule =
+          "【开场铁律 · 电商货架看货机制】：当前投放平台为【" +
+          platformStr +
+          "】。消费者买东西的核心心理是看货！第一镜【必须直接、清晰地展示产品全貌主体或核心功能触发点】，绝对禁止任何形式的抽象意象或无产品前摇，直接呈现确定性卖点！";
+      } else {
+        platformHookRule =
+          "【开场铁律 · 横屏TVC/大银幕叙事空间】：当前投放平台为【" +
+          platformStr +
+          "】。第一镜允许使用高级的广角大景别（Establishing Shot）或充满电影感的光影氛围空镜引入，交代空间阶层与情绪调性，注重舒缓的电影感视听呼吸感。";
+      }
+
+      var aspectCompositionRule =
+        "【画幅构图死命令】：当前画布大小为【" +
+        ratioStr +
+        "】。你在描述每一个镜头的 visual 画面陈设时，必须【完全对齐该画幅的视觉重心】：\n" +
+        "- 若为 9:16/4:5（竖屏），视觉元素必须纵向居中堆叠，运镜多使用 Pedestal（垂直升降）或纵向 Dolly In，注意上下留白空间；\n" +
+        "- 若为 16:9/21:9（横屏），视觉元素必须横向展开，充分运用对称构图、三分法则，运镜多使用 Truck（横向平移）或 Arc Orbit（圆弧绕拍），展现宏大的横向空间张力。";
+
+      var dynamicCreativeAngle =
+        "【核心投放平台】：🚨 " +
+        platformStr +
+        " 🚨\n" +
+        "【当前画幅构图】：📐 " +
+        ratioStr +
+        " 📐\n" +
+        "【行业类目约束】：📦 本片服务于【" +
+        categoryLabelForStyle +
+        "】行业的【" +
+        productLabelForStyle +
+        "】。你必须提取该行业的独有材质特征（美妆重质地/次表面散射；3C重精密拉丝/金属 PBR 反应；食品重 ASMR 润泽感）。\n\n" +
+        platformHookRule +
+        "\n" +
+        aspectCompositionRule +
+        "\n\n";
+
+      if (styleCfg.id === "A" || styleIndex === 0) {
+        dynamicCreativeAngle +=
+          "【平行提案一：匠心物理美学 (The Precision Craftsmanship - 经典奢华顶奢片)】\n" +
+          "👉 核心策略：这是一套完全独立、端庄、挑不出任何毛病的高端商业正片。切入视角为【极致纯粹的物理美学与精密解构】。全片聚焦于产品的材质肌理、机械咬合、光影折射与硬核功能事实，用绝对的画面纯净度自证身价、建立无坚不摧的品牌溢价与信任感。\n" +
+          "👉 视听执行：运镜沉稳有力（如受控的慢速推拉、精密拉焦）。描述中必须写明具体材质（如磨砂、拉丝、镜面）在工业打光下的物理反应。允许穿插人手的专家级克制操作，但焦点时刻锁死在产品高光上。最适合作为主线品牌形象片。";
+      } else if (styleCfg.id === "B" || styleIndex === 1) {
+        dynamicCreativeAngle +=
+          "【平行提案二：人文呼吸场景 (The Warm Lifestyle - 共鸣感场景叙事片)】\n" +
+          "👉 核心策略：这是一套完全独立、充满温度和呼吸感的生活流叙事广告片。切入视角为【人与产品的温情共生】。它弱化冷冰冰的器械感，通过真实、高级、有阶层感的使用场景（必须紧密围绕产品卖点展开），展现产品带给用户的陪伴、情绪升华与体验价值。\n" +
+          "👉 视听执行：打光主打高级的自然窗光、清晨逆光，画面带有奶油般的 cinematic bokeh（散景）。镜头精准捕捉人物的使用神态（如指尖拂过、抬手佩戴、释怀的一笑），让产品作为推动情节或情绪的核心道具自然出镜，用真实的生活体验征服客户。";
+      } else {
+        dynamicCreativeAngle +=
+          "【平行提案三：时尚感官视觉 (The High-Energy Dynamic - 高能视听冲击爆片)】\n" +
+          "👉 核心策略：这是一套完全独立、极具现代视听冲击力的时尚高能广告片。切入视角为【荷尔蒙爆发与极致感官爽感】。它通过高反差的光影异变、富有攻击性的运镜节奏和高密度的信息量，强行收割眼球、激发用户的购买冲动。\n" +
+          "👉 视听执行：全片单镜时长严格执行 0.5s - 2.5s 的快剪。运镜使用高能的手持、快速甩镜（Whip Pan）或匹配剪辑（Match Cut）。允许在高潮段落使用 4/9/16 宫格阵列多屏闪现。同样 100% 紧扣产品本体动作，但配合短促抽吸、磁吸嗒合等极致 ASMR 音效，将动感推向最高峰，最适合高饱和投流。";
+      }
+
       var dynamicPacingBlock =
-        "【分镜管线：平台与风格适配法则（打破同质化）】\n" +
-        "当前投放平台为【" + (platformStr || "未指定") + "】，目标总时长区间为【" + targetMin + "-" + targetMax + "s】。\n" +
-        "系统已根据平台调性和本套风格（" + styleCfg.name + "）为你分配了【" + minNodes + " 到 " + maxNodes + " 个镜头】的创作区间。请根据最佳叙事节奏自由决定最终镜头数！\n" +
+        "【分镜管线 · 时长与节奏匹配法则】\n" +
+        "当前目标总时长区间为【" +
+        targetMin +
+        " - " +
+        targetMax +
+        "s】。\n" +
+        "系统已为你分配了【" +
+        minNodes +
+        " 到 " +
+        maxNodes +
+        " 个镜头】的创作区间。请根据你的叙事节奏自由决定最终镜头数！\n" +
         "请严格按照以下法则分配单镜时长，总时长必须落入区间：\n";
 
-      if (isShortVideo || isStyleC) {
-        dynamicPacingBlock += "👉 【短视频/极速快剪法则】：节奏必须极快、抓人！单镜时长严禁超过 2.5 秒，强制使用 0.5s-1.5s 的高频短切镜头填满总时长，绝不拖泥带水。\n";
+      if (isShortVideoPool || isStyleC) {
+        dynamicPacingBlock +=
+          "👉 【高频快剪法则】：节奏必须极快、抓人！单镜时长严禁超过 2.5 秒，强制使用 0.5s-1.5s 的高频短切镜头（或多宫格阵列）填满总时长，绝不拖泥带水，拒绝提前收尾。\n";
       } else {
-        dynamicPacingBlock += "👉 【传统/中长视频法则】：严禁机械化平均分配！根据画面信息量，允许 0.8s 的细节闪现和 4-5s 的缓慢空间调度（如 Arc Orbit）并存，注重叙事呼吸感。\n";
+        dynamicPacingBlock +=
+          "👉 【经典大片法则】：严禁机械化平均分配！根据画面信息量，允许 0.8s 的细节闪现和 4-5s 的缓慢空间调度（如 Arc Orbit）并存，注重叙事呼吸感。\n";
       }
 
-      // ================= 核心重构：全品类通用创意策略推导模型 =================
-      var productLabelForStyle = String(p.product != null ? p.product : "未填写");
-      var categoryLabelForStyle = p.category && String(p.category).trim() ? String(p.category).trim() : "未分类";
+      const systemPrompt = `你是一位斩获戛纳金狮奖、精通 4A 大厂全套提案心法的顶级 TVC 广告片导演。
+你的唯一任务是：基于用户输入的行业、产品、卖点、平台和画幅，定制 3 套完全平行、质量对等、且皆可独立拿去直接上线的 Client-ready 分镜脚本。
 
-      var dynamicCreativeAngle = "";
-      if (styleCfg.id === "A" || styleIndex === 0) {
-        dynamicCreativeAngle =
-          "【策略方向一：纯粹工业微观 (Pure Macro & Physics - 包豪斯克制美学)】\n" +
-          "核心推导：这是一个极度冷静、冷色调、科技感、无菌实验室风格的奢侈工业片。全片 100% 聚焦于产品的物理结构、微观拉丝纹理（Macro）和光影的物理扫描。像科学家一样用受控的慢速运镜解剖它！\n" +
-          "🛑 视听禁令：绝对禁止出现任何人物、任何生活暖色调环境、任何多画面宫格！单镜时长保持在 3s - 5s，追求平稳的空间呼吸感，用镜头的极致纯净度展现工业溢价。";
-      } else if (styleCfg.id === "B" || styleIndex === 1) {
-        dynamicCreativeAngle =
-          "【策略方向二：人文呼吸感 (Human & Lifestyle)】\n" +
-          "核心推导：产品只是配角，人才是主角！镜头必须由人物的动作、神态（如眼神、指尖）以及充满呼吸感的真实生活场景主导。弱化冷冰冰的工业感，用带有温度的生活流画面引出产品。";
-      } else {
-        dynamicCreativeAngle =
-          "【策略方向三：反常识意识流蒙太奇 (Disruptive Montage - 极速感官暴击)】\n" +
-          "核心推导：抛弃任何传统的零件堆砌！追求极致的意识流与感官刺激！画面必须是【毫无关联的自然奇观/高维意象】与【产品局部动作】的疯狂跳切（Match Cut）。例如：用咆哮的雷电跳切到产品的核心高光、用液态金属的翻滚跳切到外壳轮廓。用 ASMR、运动模糊和极速残影制造视觉冲击！\n" +
-          "🛑 视听指令：前三镜【绝对禁止】直接拍产品整体！强制使用 0.5s - 1.5s 的高频短切短镜头。允许在中间高潮段落使用 16 宫格或 25 宫格的多屏阵列瞬间闪现，制造信息量爆炸的视觉风暴。";
-      }
-
-      // 动态 System Prompt
-      const systemPrompt = `你是一位斩获戛纳金狮奖的顶级 TVC 导演。
-你的任务是：基于【${categoryLabelForStyle}】行业的【${productLabelForStyle}】简报，量身定制 Client-ready 的分镜。
-
-【导演核心铁律】
-1. 风格裂变：必须严格按照下方的【策略方向】行事，起一个高级的 \`styleName\`，并写 \`director_treatment\`。
-2. 镜头颗粒度：\`motion\` 必用矢量运镜；\`lighting\` 写明工业光影；\`audio\` 写物理质感音效。
-3. 英文生图词 \`eng_prompt\`：用精炼英文描述本镜核心视觉动作，不要只写产品。
-4. 🛑【语言死纪律】：除 \`eng_prompt\` 必须是纯英文外，其余所有字段（visual, motion, audio, lighting 等）必须【全部使用纯正的中文】！绝对禁止中英混杂！
+【导演最高铁律】
+1. 🛑 拒绝陪衬：3套提案必须是平等的“三选一”优秀方案，每一个风格都必须 100% 紧扣产品本体和用户输入的具体卖点，只是切入的视听视角不同！
+2. 🛑 拒绝雷同与偷懒：3套分镜的运镜轨迹、第一幕起手、故事场景、打光 Rig 必须彻底割裂，严禁相互抄袭或在 SHOT 8 盲目定格偷懒！
+3. 🛑 纯正语言纪律：除 \`eng_prompt\` 必须是精炼的纯英文生图词外，其余所有字段（visual, motion, audio, lighting 等）必须【全部使用纯正、地道的专业中文】！绝对禁止中英混杂！
+4. 🛑 系统标记滤除：\`visual\` 正文内绝对不准包含 #、素材格 或任何系统内部编号文字，必须是纯粹、高可读性的画面描述。
 
 ${dynamicCreativeAngle}
+${dynamicPacingBlock}
 
-严格返回合法 JSON：{"styleName": "...", "director_treatment": "...", "visualDNA": "...", "shots": [{"source_image_id": 1, "visual": "...", "eng_prompt": "...", "motion": "...", "start_motion": "...", "end_motion": "...", "audio": "...", "lighting": "...", "pacing": "...", "duration": 3}]}
-${buildUniversalBindingPromptBlock(catalogSlotCount)}
-${dynamicPacingBlock}`;
+严格返回最外层为标准的合法 JSON 结构：{"styleName": "...", "director_treatment": "...", "visualDNA": "...", "shots": [{"source_image_id": 1, "visual": "纯中文画面描述", "eng_prompt": "English prompt for image gen", "motion": "专业矢量运镜", "start_motion": "...", "end_motion": "...", "audio": "物理 ASMR 音效", "lighting": "工业打光 Rig", "pacing": "...", "duration": 3}]}
+${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
 
       var userTextBlock =
         "【投放平台】：" + (platformStr || "未指定") + "\n" +
@@ -1611,13 +1667,13 @@ ${dynamicPacingBlock}`;
         if (batchCount === 1) {
           if (styleCfg.id === "A" || styleIndex === 0) {
             narrativePhase =
-              "【第一幕：微观入局 (The Micro-Hook)】第一镜直接怼进产品的最深处！写极致的微观材质、机械咬合或反光。绝不出现人和大环境，纯粹的物理暴力美学。";
+              "【第一幕：匠心起幅】第一镜正面切入产品材质高光或核心结构 Macro，运镜舒缓大气；可穿插专家手势或赞许眼神，但焦点始终锁死产品物理之美。";
           } else if (styleCfg.id === "B" || styleIndex === 1) {
             narrativePhase =
-              "【第一幕：人文悬念 (The Human Hook)】第一镜【绝对禁止】产品出现！必须用人物的局部特写（如手、背影、眼神）或充满氛围感的生活空镜起手，建立情绪。";
+              "【第一幕：生活起幅】第一镜在高级真实场景中建立人物与产品的自然关系（指尖触碰、佩戴、使用），产品作为推动情绪的核心道具，温暖窗光或逆光。";
           } else {
             narrativePhase =
-              "【第一幕：奇观暴击 (The Disruptive Hook)】第一镜【绝对禁止】产品出现！必须是一个极具视觉冲击力的隐喻（例如：水滴炸裂、瞳孔骤缩、燃烧的引线、极速残影）。先破圈，再引出产品！";
+              "【第一幕：高能钩子】第一镜用产品极限特写、高反差光影异变或运动模糊强抓眼球，0.5–2.5s 短切节奏，产品始终是画面主体。";
           }
         } else if (batchCount === 2) {
           narrativePhase =
