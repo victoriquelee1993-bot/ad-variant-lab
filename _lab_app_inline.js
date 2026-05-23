@@ -937,12 +937,6 @@
 
     /** 时长宽容区间：Sum∈[lo,hi] 不缩放；偏短缩至 targetIdeal=lo+(hi-lo)*0.4；偏长压至 hi；写回 duration 并剔除 duration_weight */
     function clampShotDurationsToWindow(shots, targetMin, targetMax, styleOpts, productName) {
-      var productLabel = String(productName != null ? productName : "").trim();
-      if (!productLabel) {
-        var productInputEl = document.getElementById("product-input");
-        productLabel = productInputEl ? String(productInputEl.value || "").trim() : "";
-      }
-      if (!productLabel) productLabel = "产品";
       if (!Array.isArray(shots) || !shots.length) return;
       var lo = parseFloat(targetMin);
       var hi = parseFloat(targetMax);
@@ -981,10 +975,10 @@
       var GRID_VISUAL_CAP_RE = /宫格|分屏|阵列/;
 
       function shotMaxDurationCap(shot) {
+        if (styleC) return 2.5;
         var vis = String(shot && shot.visual != null ? shot.visual : "");
         if (GRID_VISUAL_CAP_RE.test(vis)) return hi * 0.5;
-        if (styleC) return 2.5;
-        return 5;
+        return 8;
       }
 
       function stripWeights() {
@@ -998,39 +992,12 @@
         }
       }
 
-      /** 终章定格补镜：Logo 慢动作定格 / Hero 终章（整数秒） */
-      function createFinalHoldShot(holdKind) {
-        var isHero = holdKind === "hero";
-        return {
-          duration: 2,
-          source_image_id: 1,
-          matching_reason: "系统自动补足终章定格镜头以闭合整数时长",
-          visual: isHero
-            ? productLabel + " 最终形态 Hero Shot，产品全貌在棚拍主光下优雅定格收束。"
-            : productLabel + " 品牌 Logo 最终定格，产品质感淡入，优雅收尾。",
-          motion: isHero ? "Dolly Out to Hero Reveal" : "静止不动",
-          start_motion: isHero
-            ? "由上一镜落幅空间延续，产品终章全貌起幅"
-            : "Logo 自虚焦缓慢凝聚于画面中心",
-          end_motion: isHero ? "产品 Hero 全貌稳定落幅" : "Logo 完全清晰慢动作定格",
-          continuity_check: isHero
-            ? "终章补镜：最终形态 Hero Shot，承接前一镜落幅。"
-            : "终章补镜：品牌 Logo 最终定格，承接前一镜落幅。",
-          transition: isHero ? "切" : "叠化",
-          audio: "环境声铺底渐弱",
-          lighting: isHero ? "主光 + 柔 fill" : "Rim Light 轮廓光",
-          pacing: "慢",
-        };
-      }
-
       /**
-       * 整数时长最终形态：取整 → 超长则从最长镜 -1s → 不足则末尾循环补足定格镜（默认 2s/镜）。
+       * 工业级重构：整数时长最终形态（彻底杜绝无意义的补帧与机械横跳）
        */
       function enforceIntegerDuration() {
         var INT_MIN_SHOT = 1;
-        var PAD_DEFAULT_SEC = 2;
         var si;
-        var capSi;
         var intLo = Math.ceil(lo);
         var intHi = Math.floor(hi);
         if (intHi < intLo) {
@@ -1047,21 +1014,19 @@
           return s;
         }
 
-        // 1. 取整（Number 整数，单镜 ≥ 1s，遵守单镜上限）
+        // 1. 首次取整
         for (si = 0; si < shots.length; si++) {
           if (!shots[si]) continue;
-          var rd = Math.max(INT_MIN_SHOT, Math.round(parseFloat(shots[si].duration) || 0));
-          capSi = Math.floor(shotMaxDurationCap(shots[si]));
-          if (capSi < INT_MIN_SHOT) capSi = INT_MIN_SHOT;
-          if (rd > capSi) rd = capSi;
-          shots[si].duration = Number(rd);
+          var rd = Math.round(parseFloat(shots[si].duration) || 0);
+          var capSi = Math.floor(shotMaxDurationCap(shots[si]));
+          shots[si].duration = Number(Math.max(INT_MIN_SHOT, Math.min(capSi, rd)));
         }
 
         var total = sumIntegerTotal();
 
-        // 总长超过上限：从最长镜头每次 -1s 压回（仍保持整数）
+        // 2. 总长超过上限：从最长镜头优先平滑减扣
         var trimPasses = 0;
-        while (total > intHi && trimPasses < shots.length * 6) {
+        while (total > intHi && trimPasses < shots.length * 10) {
           trimPasses++;
           var trimIdx = -1;
           var trimDur = -1;
@@ -1078,25 +1043,39 @@
           total = sumIntegerTotal();
         }
 
-        // 2. 不足 targetMin：交由前端兜底时，最多只允许补足一次收尾，坚决拒绝无限重复补帧！
-        if (total < intLo) {
-          console.warn("AI 最终生成的总信息量偏少。将仅追加一次优雅收尾，拒绝无限横跳。");
-        }
-        var padGuard = 0;
-        // 核心修改：最多 2 次（1 次 Hero + 1 次 Logo），时长未凑够也直接跳出
-        var maxPadShots = 2;
-        while (total < intLo && padGuard < maxPadShots) {
-          // 优先 Hero 定格收尾，其次 Logo
-          var padShot = createFinalHoldShot(padGuard === 0 ? "hero" : "logo");
-          capSi = Math.floor(shotMaxDurationCap(padShot));
-          if (capSi < INT_MIN_SHOT) capSi = INT_MIN_SHOT;
-          var needSec = intLo - total;
-          padShot.duration = Number(
-            Math.min(capSi, Math.max(INT_MIN_SHOT, Math.min(PAD_DEFAULT_SEC, needSec)))
-          );
-          shots.push(padShot);
-          total += padShot.duration;
-          padGuard++;
+        // 3. 总长不足下限时，坚决拒绝无脑追加定格镜头；按叙事权重阶梯伸缩
+        var expandPasses = 0;
+        while (total < intLo && expandPasses < shots.length * 10) {
+          expandPasses++;
+          var expIdx = -1;
+          var maxHeadroom = -1;
+
+          for (si = 0; si < shots.length; si++) {
+            var curD = parseInt(shots[si].duration, 10) || 0;
+            var capD = Math.floor(shotMaxDurationCap(shots[si]));
+            var headroom = capD - curD;
+
+            var visText = String(shots[si].visual || "").toLowerCase();
+            var isComplexMotion = /orbit|dolly|focus|traverse|绕拍|推拉|拉焦/i.test(visText);
+            if (isComplexMotion) headroom += 2;
+
+            if (headroom > maxHeadroom && curD < capD) {
+              maxHeadroom = headroom;
+              expIdx = si;
+            }
+          }
+
+          if (expIdx < 0) {
+            if (shots.length) {
+              shots[shots.length - 1].duration = Number(shots[shots.length - 1].duration) + 1;
+              total++;
+            } else {
+              break;
+            }
+          } else {
+            shots[expIdx].duration = Number(shots[expIdx].duration) + 1;
+            total = sumIntegerTotal();
+          }
         }
       }
 
@@ -1532,14 +1511,19 @@
 
       var dynamicCreativeAngle = "";
       if (styleCfg.id === "A" || styleIndex === 0) {
-        dynamicCreativeAngle = "【策略方向一：纯粹工业微观 (Pure Macro & Physics)】\n" +
-                               "核心推导：这是一个极度克制、无菌实验室感的广告。绝对禁止出现任何人物、生活场景或抽象隐喻！全片 100% 聚焦于产品的物理结构、微观纹理（Macro）和光影的物理反应。像科学家一样解剖它！";
+        dynamicCreativeAngle =
+          "【策略方向一：纯粹工业微观 (Pure Macro & Physics - 包豪斯克制美学)】\n" +
+          "核心推导：这是一个极度冷静、冷色调、科技感、无菌实验室风格的奢侈工业片。全片 100% 聚焦于产品的物理结构、微观拉丝纹理（Macro）和光影的物理扫描。像科学家一样用受控的慢速运镜解剖它！\n" +
+          "🛑 视听禁令：绝对禁止出现任何人物、任何生活暖色调环境、任何多画面宫格！单镜时长保持在 3s - 5s，追求平稳的空间呼吸感，用镜头的极致纯净度展现工业溢价。";
       } else if (styleCfg.id === "B" || styleIndex === 1) {
-        dynamicCreativeAngle = "【策略方向二：人文呼吸感 (Human & Lifestyle)】\n" +
-                               "核心推导：【产品只是配角，人才是主角】！镜头必须由人物的动作、神态（如眼神、指尖）以及充满呼吸感的真实生活场景主导。弱化冷冰冰的工业感，用带有温度的生活流画面引出产品。";
+        dynamicCreativeAngle =
+          "【策略方向二：人文呼吸感 (Human & Lifestyle)】\n" +
+          "核心推导：产品只是配角，人才是主角！镜头必须由人物的动作、神态（如眼神、指尖）以及充满呼吸感的真实生活场景主导。弱化冷冰冰的工业感，用带有温度的生活流画面引出产品。";
       } else {
-        dynamicCreativeAngle = "【策略方向三：反常识蒙太奇 (Disruptive Montage)】\n" +
-                               "核心推导：抛弃传统广告，追求极致感官刺激！画面必须是「极端意象」与「产品局部」的疯狂跳切（Match Cut）。例如：用翻滚的海浪跳切到表盘、用炸裂的火花跳切到金属外壳。用毫无关联的奇观隐喻来制造强烈的 ASMR 与视觉冲击！";
+        dynamicCreativeAngle =
+          "【策略方向三：反常识意识流蒙太奇 (Disruptive Montage - 极速感官暴击)】\n" +
+          "核心推导：抛弃任何传统的零件堆砌！追求极致的意识流与感官刺激！画面必须是【毫无关联的自然奇观/高维意象】与【产品局部动作】的疯狂跳切（Match Cut）。例如：用咆哮的雷电跳切到产品的核心高光、用液态金属的翻滚跳切到外壳轮廓。用 ASMR、运动模糊和极速残影制造视觉冲击！\n" +
+          "🛑 视听指令：前三镜【绝对禁止】直接拍产品整体！强制使用 0.5s - 1.5s 的高频短切短镜头。允许在中间高潮段落使用 16 宫格或 25 宫格的多屏阵列瞬间闪现，制造信息量爆炸的视觉风暴。";
       }
 
       // 动态 System Prompt
@@ -2561,12 +2545,12 @@ ${dynamicPacingBlock}`;
   function getStyleMoodSuffix(style, sIdx) {
     var name = String((style && style.styleName) || "");
     if (/style\s*a\b/i.test(name) || (sIdx === 0 && !/style\s*[bc]\b/i.test(name))) {
-      return "macro probe lens, extreme micro-details, sharp focus, pristine material texture, high-end sterile commercial look.";
+      return "macro probe lens, extreme micro-details, sharp technical focus, pristine material texture, cinematic clinical lighting, minimalist clean laboratory environment, premium industrial packshot standard.";
     }
     if (/style\s*b\b/i.test(name) || sIdx === 1) {
-      return "High-end lifestyle photography, warm afternoon sunlight, beautiful depth of field, blurred background, cinematic bokeh, authentic and elegant.";
+      return "High-end lifestyle photography, warm afternoon ambient light, soft natural shadows, beautiful depth of field, blurred background, cinematic elegant bokeh, organic and authentic feel.";
     }
-    return "Dynamic angle, motion blur, high contrast dramatic lighting, deep shadows, aggressive composition, extreme visual impact.";
+    return "Surreal avant-garde cinematography, high contrast dramatic chiaroscuro lighting, deep liquid dark background, explosive abstract textures, aggressive composition, intentional motion blur, extreme visual impact, award-winning commercial tvc style.";
   }
 
   /** 全行业顶级商业摄影 — 材质 → 物理/光影约束（供 DALL·E 工业级出图） */
