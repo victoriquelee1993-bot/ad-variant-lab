@@ -402,6 +402,74 @@
       justify-content: flex-end;
       margin-top: 20px;
     }
+    .prompt-modal {
+      max-width: 760px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .prompt-modal-content {
+      overflow-y: auto;
+      flex: 1;
+      padding-right: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .prompt-modal-content::-webkit-scrollbar {
+      width: 6px;
+    }
+    .prompt-modal-content::-webkit-scrollbar-thumb {
+      background: rgba(0,0,0,0.15);
+      border-radius: 999px;
+    }
+    .prompt-card {
+      background: var(--control-bg);
+      border: var(--line-solid);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+    }
+    .prompt-card__header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: var(--blue);
+    }
+    .prompt-card__content {
+      font-family: monospace;
+      font-size: 0.85rem;
+      line-height: 1.55;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: rgba(0,0,0,0.03);
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(0,0,0,0.05);
+      user-select: all;
+    }
+    .btn-copy-icon {
+      background: transparent;
+      border: 1px solid rgba(0,0,0,0.08);
+      cursor: pointer;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+      background: #fff;
+    }
+    .btn-copy-icon:hover {
+      background: rgba(0, 102, 204, 0.08);
+      color: var(--blue);
+      border-color: rgba(0, 102, 204, 0.2);
+    }
     /* 文本类控件统一视觉（与卖点简报 textarea 对齐） */
     input.ui-control,
     textarea.ui-control,
@@ -1220,6 +1288,17 @@
       <div class="config-modal__actions">
         <button type="button" id="btn-close-api-config" class="btn-pill">取消</button>
         <button type="button" id="btn-save-api-config" class="btn-pill btn-pill--primary">保存到本机</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="prompt-display-modal" class="config-modal-overlay" aria-hidden="true" role="dialog">
+    <div class="config-modal prompt-modal">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color);">
+        <h2 id="prompt-modal-title" class="config-modal__title" style="margin: 0; font-size: 1.15rem;">提示词提取</h2>
+        <button type="button" id="btn-close-prompt-modal" class="btn-pill" style="height: 32px; padding: 0 12px; font-size: 0.8rem; background: rgba(0,0,0,0.05); color: var(--text);">关闭</button>
+      </div>
+      <div id="prompt-modal-content" class="prompt-modal-content">
       </div>
     </div>
   </div>

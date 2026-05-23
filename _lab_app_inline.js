@@ -1477,7 +1477,7 @@
         targetMax = swp;
       }
 
-      var platformStr = String(p.platform || "");
+      var platformStr = String(p.platform || "通用平台");
       var isShortVideo = /TikTok|Reels|Shorts|小红书|Instagram/.test(platformStr);
       var isStyleC = isStyleCFastCut(styleCfg);
       var avgShotLen = 3.0;
@@ -1515,32 +1515,38 @@
         dynamicPacingBlock += "👉 【传统/中长视频法则】：严禁机械化平均分配！根据画面信息量，允许 0.8s 的细节闪现和 4-5s 的缓慢空间调度（如 Arc Orbit）并存，注重叙事呼吸感。\n";
       }
 
-      var productLabelForStyle =
-        String(p.product != null ? p.product : "未填写");
-      var categoryLabelForStyle =
-        p.category && String(p.category).trim() ? String(p.category).trim() : "未分类";
+      // ================= 核心重构：全品类通用创意策略推导模型 =================
+      var productLabelForStyle = String(p.product != null ? p.product : "未填写");
+      var categoryLabelForStyle = p.category && String(p.category).trim() ? String(p.category).trim() : "未分类";
 
-      const systemPrompt =
-        `你是一位斩获多项戛纳金狮奖的 4A 广告公司顶级创意总监（Creative Director）兼广告导演。你的任务是产出一份可以直接呈现给国内品牌方高层、达到工业级拍摄标准的商业广告分镜脚本（Shooting Board）。
+      // 真正的创意总监思维：不是套视觉模板，而是根据索引 (styleIndex) 分配 3 种完全不同的商业推导策略
+      var dynamicCreativeAngle = "";
+      if (styleCfg.id === "A" || styleIndex === 0) {
+        dynamicCreativeAngle = "【策略方向一：本体隐喻与极致功能演绎 (Product as Hero / Metaphor)】\n" +
+                               "核心推导：无论【" + productLabelForStyle + "】是实体商品还是虚拟服务，请深挖其最硬核的物理/技术特性。绝不平铺直叙！必须将其核心卖点转化为视觉隐喻。\n" +
+                               "（举例指导：如果是香水，将味道具象化为爆炸的荆棘；如果是B2B软件，将数据具象化为流动的光瀑；如果是食品，展现食材最极端的物理质感）。展现该品类最极致的专业度与降维打击感。";
+      } else if (styleCfg.id === "B" || styleIndex === 1) {
+        dynamicCreativeAngle = "【策略方向二：场景重塑与人文共情 (Consumer Insight / Empathy)】\n" +
+                               "核心推导：不要盯着产品看，去盯【使用它的人】！结合【" + categoryLabelForStyle + "】行业的真实痛点，展示没有该产品时的困境，以及使用后的生活流/工作流蜕变。\n" +
+                               "（举例指导：无论卖的是跑车、护肤品还是农用机械，主角永远是有血有肉的人。产品只是解决痛点的钥匙。大量使用生活化、有呼吸感的场景设定，激发观众的同理心与代入感）。";
+      } else {
+        dynamicCreativeAngle = "【策略方向三：反常识奇观与平台原生网感 (Disruptive / Platform-Native)】\n" +
+                               "核心推导：针对【" + platformStr + "】的受众习惯，抛弃所有传统广告语境！制造强烈的视觉反差、甚至略带荒诞的实验性测试。\n" +
+                               "（举例指导：打破第四面墙的人物独白、极具反差的极端环境测试、极高密度的蒙太奇快剪、或者放大微小细节的ASMR感官放大）。目的只有一个：在头3秒死死抓住眼球，用最不按常理出牌的方式完成卖点植入。";
+      }
 
-【语言输出铁律（极其重要）】
-除了 \`visualDNA\` 必须是纯英文（用于 Midjourney 生图），以及 \`motion\` 中少量矢量运镜专业术语（如 Dolly in, Rack focus）可使用英文外，**你的其他所有输出（包括 \`styleName\`, \`director_treatment\`, \`visual\`, \`start_motion\`, \`end_motion\`, \`audio\`, \`lighting\`, \`continuity_check\` 等）必须100%使用地道、专业的中文！** 绝对不允许在动作描述中夹杂英文长句！**\`director_treatment\` 将直接呈现给国内品牌方高层审阅，一旦出现英文段落或英文句式（产品/品牌等专有名词除外），整份脚本将被直接退稿。**
+      // 动态 System Prompt
+      const systemPrompt = `你是一位斩获无数戛纳金狮奖的顶级 4A 广告创意总监兼 TVC 导演。
+你的任务是：基于一份关于【${categoryLabelForStyle}】行业的【${productLabelForStyle}】的项目简报，为其量身定制一份 Client-ready 的分镜脚本。
 
-【核心铁律：动态品类风格裂变】
-严禁使用诸如「实验室风、快剪」等套路化的通用词汇。你必须基于当前产品【${productLabelForStyle}】（类目：【${categoryLabelForStyle}】），为其量身定制独一无二的视觉风格概念。
-例如：香水应叫「法式新浪潮情绪叙事」；跑鞋应叫「第一人称赛博废土跑酷」。请用你的创意将其彻底包装，并以中文重写 \`styleName\` 字段。
+【专业导演核心准则（禁止敷衍与套路）】
+1. 动态生成风格：不要套用刻板印象！你必须根据下方的【策略方向】，结合当前产品特性，亲自为其命名一个极具高级感的 \`styleName\`（例如："赛博新古典主义"、"沉浸式痛点解构"），并撰写 \`director_treatment\`（导演阐述你要如何用镜头语言实现该策略）。
+2. 镜头颗粒度：\`visual\` 必须精准描述场景美术、构图与质感；\`motion\` 必须使用专业矢量运镜术语（如 Rack focus, Whip pan, Tracking shot）；\`lighting\` 必须写明工业打光方案（如 Rembrandt lighting, Neon rim light）；\`audio\` 写明音效或旁白情绪。
+3. 空镜与隐喻的必达指令（B-Roll）：绝对禁止写出"从头到尾都在拍产品图"的垃圾脚本！一部好商业片，60% 是环境、隐喻和人物的铺垫（B-Roll）。只有需要点题时，才精准调用素材库中的产品特写图。对于虚构的空镜，\`source_image_id\` 填最接近的素材序号占位即可，但画面必须大胆虚构！
 
-【分镜颗粒度要求（达到 Client-ready 级别）】
-- **Visual (画面内容)**：具体描述场景陈设、人物动作、色彩基调、光影氛围。例如：「（冷调青蓝光）模特身穿高定丝绒黑裙，指尖轻触磨砂表盘，背景是模糊的东京雨夜霓虹」。
-- **Motion & Start/End**：使用矢量化专业术语（如 Dolly in），但 Start/End 的场景描述必须是中文（例：Start: 画面从模糊的霓虹灯起幅。End: 焦点锁定在表盘 logo）。
-- **Lighting**：写明工业 Rig（例：柔光箱顶灯辅以 Rim light 勾边）。
+${dynamicCreativeAngle}
 
-【严禁重复注水与死循环（防幻觉死命令）】
-- 时长：必须落在 ${targetMin}-${targetMax} 秒之间，单镜 duration 为整数。
-- 叙事推进：**绝对不允许连续 3 个镜头全都在拍产品的微距局部（如无限循环齿轮、表盘特写）！**
-
-【输出格式】
-只输出合法的 JSON，结构包含：\`styleName\` (纯中文创意风格名), \`director_treatment\` (**强制纯中文**导演阐述：视觉美术、听觉设计、叙事基调须全部用中文撰写；**严禁**出现任何英文单词或英文句子，仅允许保留产品/品牌等专有名词原文；若含英文将被系统退稿), \`visualDNA\` (纯英文 MJ 提示词), \`shots[]\` (镜头数组)。每镜必填：\`source_image_id\`(严格对应素材库), \`visual\`, \`motion\`, \`start_motion\`, \`end_motion\`, \`audio\`, \`lighting\`, \`pacing\`, \`duration\`(整数)。
+你只能输出合法的 JSON，格式要求：{"styleName": "...", "director_treatment": "...", "visualDNA": "...", "shots": [{"source_image_id": 1, "visual": "...", "motion": "...", "start_motion": "...", "end_motion": "...", "audio": "...", "lighting": "...", "pacing": "...", "duration": 3}]}
 ${buildUniversalBindingPromptBlock(catalogSlotCount)}
 ${dynamicPacingBlock}`;
 
@@ -1565,7 +1571,12 @@ ${dynamicPacingBlock}`;
         "【场景库】：" +
         usageScenariosForPrompt +
         "\n\n" +
-        "⚡【丰富画面信息量（防注水指令）】：如果简报提供的卖点很少，绝对禁止拉长单镜时长来凑数！请结合不同景别、光影变化和当前风格设定的独有特质，将单薄的卖点转化为高密度的多维镜头填满时长。\n\n" +
+        "⚡【顶级 TVC 叙事法则（防纯产品切片死命令）】：\n" +
+        "一部满分的商业广告，绝对不能从头到尾只拍产品！那不是广告，是无聊的产品说明书。你必须采用【人/情绪/隐喻 + 产品交织】的顶级蒙太奇结构：\n" +
+        "1. 必须虚构 B-Roll 与视觉隐喻：大胆创造不在素材库中的画面！如抽象的光影、翻涌的海浪、瞳孔特写、疾驰的跑车等，用来建立情绪基调。\n" +
+        "2. 必须引入活生生的人物：写出人物的神态、肢体（如整理领带、指尖划过水面、极具张力的眼神）。\n" +
+        "3. 镜头分配比例（黄金法则）：全片中，纯产品特写镜头（来自素材库）最多只能占 40%。其余 60% 的镜头，必须是你虚构的、充满电影感的人物、环境、隐喻或 B-Roll 空镜！\n" +
+        "对于你虚构的 B-Roll 或人物镜头，`source_image_id` 请依然填入一个最相近的场景或情绪图索引（以供占位），但你的 `visual` 描述必须天马行空，充满电影感，绝不能局限于原图！\n\n" +
         "【本套风格编号：" +
         styleCfg.name +
         "】\n请严格遵循 system 中的「动态品类风格裂变」铁律：重写顶层 \`styleName\` 为专属创意名，禁止套用实验室风/快剪等固定模板。\n\n指令：请仔细观察提供的产品图，结合卖点、品类和平台特性设计分镜。强制要求：1. Visual/Motion/Lighting 达到 Client-ready 颗粒度。2. \`visualDNA\` 输出 Midjourney 级英文摄影基底。3. 每镜 \`source_image_id\` 严格对应素材库。\n" +
@@ -1599,23 +1610,60 @@ ${dynamicPacingBlock}`;
           10 + (currentShots.length / targetNodes) * 30
         );
 
-        // 动态构建当前批次的系统 Prompt
+        // --- 1. 工业级重构：由 JS 引擎强制生成无序序列，剥夺 AI 的排列自由 ---
+        var batchBlueprintStr = "";
+        if (catalogSlotCount > 1) {
+          var blueprintIds = [];
+          var recentIds = [];
+          // 记录最近使用过的两个镜头，避免微观重复
+          if (currentShots.length > 0) recentIds.push(parseInt(currentShots[currentShots.length - 1].source_image_id, 10));
+          if (currentShots.length > 1) recentIds.push(parseInt(currentShots[currentShots.length - 2].source_image_id, 10));
+
+          // 算法生成打乱的素材阵列
+          for (var bi = 0; bi < shotsToRequest; bi++) {
+            var pool = [];
+            for (var c = 1; c <= catalogSlotCount; c++) {
+              // 确保当前选取的图与前两镜不重复，彻底打破 123456 的连号循环
+              if (recentIds.indexOf(c) === -1) pool.push(c);
+            }
+            if (pool.length === 0) pool = [1]; // 极端情况兜底
+            
+            var pick = pool[Math.floor(Math.random() * pool.length)];
+            blueprintIds.push(pick);
+            
+            recentIds.unshift(pick);
+            if (recentIds.length > 2) recentIds.pop();
+          }
+          
+          batchBlueprintStr = "【系统底层架构指令·最高优先级】：本批次 " + shotsToRequest + " 个镜头的 `source_image_id` 已经被系统底层代码锁定。\n" +
+                              "你必须【严格、依次】使用以下素材序列：" + blueprintIds.join(" -> ") + "。绝对禁止擅自更改此顺序！\n" +
+                              "你的任务是：根据这个被彻底打乱的物理素材序列，运用蒙太奇手法（改变景别、切换冷暖光影、替换焦点或ASMR音效），将它们强行串联成符合当前幕次特性的流畅剧本。";
+        } else {
+          batchBlueprintStr = "【单素材变奏指令】：当前只有 1 张素材。你必须通过变换光影、极度微距（Rack focus）、人物互动等手段，制造不同的镜头画面，严禁重复描述。";
+        }
+
+        // --- 2. 动态构建当前批次的系统 Prompt（三幕剧叙事弧光） ---
+        var narrativePhase = "";
+        if (batchCount === 1) {
+          narrativePhase = "【第一幕：情绪钩子 (The Hook) & 建立世界观】本批次请重点写【非产品】镜头。用抽象隐喻、人物特写、极具张力的环境空镜起手。即使必须露出产品，也只能是极度的冰山一角或模糊的失焦背景。制造悬念！";
+        } else if (batchCount === 2) {
+          narrativePhase = "【第二幕：冲突/痛点与人物交互】本批次请将人物/环境与产品发生强关联。通过人物的动作（如佩戴、使用、凝视）引出产品。使用场景交互镜头与少量的中景产品镜头。";
+        } else {
+          narrativePhase = "【第三幕：视觉高潮 (Hero Payoff) & 情绪升华】本批次是产品的高光时刻！现在可以集中释放素材库中的微距、机芯、质感特写。运用极速运镜与高频打光，展现工业级的极致美感，最后以人物的从容神态或顶级场景定格收尾！";
+        }
+
         var currentSystemPrompt = systemPrompt;
         if (batchCount === 1) {
           currentSystemPrompt +=
-            "\n\n【分批策略指令】：这是第 1 批，本批输出 " +
-            shotsToRequest +
-            " 个镜头。请按叙事模版展开开篇与中段，为后续批次预留剧情空间；仅输出合法 JSON。";
+            "\n\n" + narrativePhase + "\n\n" + batchBlueprintStr +
+            "\n\n【分批策略指令】：这是第 1 批，本批输出 " + shotsToRequest + " 个镜头。请按三幕叙事弧光展开开篇，为后续幕次预留剧情空间；仅输出合法 JSON。";
         } else if (batchCount > 1 && lastShotContext) {
           var deficit = targetNodes - currentShots.length;
           currentSystemPrompt +=
-            "\n\n【分批串联指令】：这是第 " +
-            batchCount +
-            " 批请求。请顺滑承接上一镜，继续横向展开产品的使用场景、材质微观特写或用户情绪反应，补充至少 " +
-            Math.min(batchSize, deficit) +
-            " 个镜头以丰富故事厚度。切勿草草收尾。上一镜的画面是：「" +
-            lastShotContext.visual +
-            "」。";
+            "\n\n" + narrativePhase + "\n\n" + batchBlueprintStr +
+            "\n\n【分批串联指令】：这是第 " + batchCount + " 批请求。请顺滑承接上一镜，补充至少 " +
+            Math.min(batchSize, deficit) + " 个镜头。上一镜的画面是：「" + lastShotContext.visual + "」。\n" +
+            "【防雷同警告】：绝不允许重复刚才已用过的画面结构和句式！必须强制执行蒙太奇跳跃向下推进剧情。";
         }
 
         var batchSuccess = false;
@@ -2980,6 +3028,78 @@ ${dynamicPacingBlock}`;
     });
   }
 
+  // ================= 提示词弹窗渲染引擎 =================
+  function openPromptModal(title, segments) {
+    var modal = document.getElementById("prompt-display-modal");
+    var titleEl = document.getElementById("prompt-modal-title");
+    var contentEl = document.getElementById("prompt-modal-content");
+    if (!modal || !titleEl || !contentEl) return;
+
+    titleEl.textContent = title;
+    contentEl.innerHTML = "";
+
+    segments.forEach(function(seg, i) {
+      var card = document.createElement("div");
+      card.className = "prompt-card";
+
+      var header = document.createElement("div");
+      header.className = "prompt-card__header";
+
+      var titleSpan = document.createElement("span");
+      titleSpan.textContent = "SHOT " + (i + 1);
+
+      var copyBtn = document.createElement("button");
+      copyBtn.className = "btn-copy-icon";
+      copyBtn.innerHTML = '📋 复制';
+      copyBtn.onclick = function() {
+        navigator.clipboard.writeText(seg.content).then(function() {
+          var oldHtml = copyBtn.innerHTML;
+          copyBtn.innerHTML = '✅ 已复制';
+          copyBtn.style.color = '#34c759';
+          copyBtn.style.borderColor = '#34c759';
+          copyBtn.style.background = 'rgba(52, 199, 89, 0.08)';
+          setTimeout(function() {
+            copyBtn.innerHTML = oldHtml;
+            copyBtn.style.color = '';
+            copyBtn.style.borderColor = '';
+            copyBtn.style.background = '';
+          }, 2000);
+        }).catch(function(err) {
+          alert("复制失败：" + err);
+        });
+      };
+
+      header.appendChild(titleSpan);
+      header.appendChild(copyBtn);
+
+      var body = document.createElement("div");
+      body.className = "prompt-card__content";
+      body.textContent = seg.content;
+
+      card.appendChild(header);
+      card.appendChild(body);
+      contentEl.appendChild(card);
+    });
+
+    modal.classList.add("is-open");
+    modal.setAttribute("aria-hidden", "false");
+  }
+
+  var closePromptBtn = document.getElementById("btn-close-prompt-modal");
+  var promptModal = document.getElementById("prompt-display-modal");
+  if (closePromptBtn && promptModal) {
+    closePromptBtn.addEventListener("click", function() {
+      promptModal.classList.remove("is-open");
+      promptModal.setAttribute("aria-hidden", "true");
+    });
+    promptModal.addEventListener("click", function(e) {
+      if (e.target === promptModal) {
+        promptModal.classList.remove("is-open");
+        promptModal.setAttribute("aria-hidden", "true");
+      }
+    });
+  }
+
   // ================= 导出 Midjourney 商业级提示词 =================
   function getMidjourneyArFromRatioSelect() {
     var ratioEl = document.getElementById("ratio-select");
@@ -2998,7 +3118,7 @@ ${dynamicPacingBlock}`;
   if (btnCopyNanoBannerPrompt) {
     btnCopyNanoBannerPrompt.addEventListener("click", function () {
       var data = window.__LAST_STORYBOARD_DATA__;
-      if (!data || !data.length) return alert("暂无分镜数据可复制，请先生成脚本。");
+      if (!data || !data.length) return alert("暂无分镜数据，请先生成脚本。");
 
       var activeTabBtn = document.querySelector(".tab-btn.is-active");
       var sIdx = activeTabBtn ? parseInt(String(activeTabBtn.dataset.tab || "0"), 10) : 0;
@@ -3015,34 +3135,20 @@ ${dynamicPacingBlock}`;
       var ar = getMidjourneyArFromRatioSelect();
       var mjSuffix = " --style raw --v 6.0 --q 2 " + ar;
 
-      var prompts = style.shots
-        .map(function (shot, i) {
-          var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx);
-          return "【SHOT " + (i + 1) + "】\n/imagine prompt: " + drawPrompt + mjSuffix;
-        })
-        .join("\n\n------------------------\n\n");
+      var segments = style.shots.map(function (shot, i) {
+        var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx);
+        return { content: "/imagine prompt: " + drawPrompt + mjSuffix };
+      });
 
-      navigator.clipboard
-        .writeText(prompts)
-        .then(function () {
-          var originalText = btnCopyNanoBannerPrompt.textContent;
-          btnCopyNanoBannerPrompt.textContent = "✅ 已复制 MJ 提示词！";
-          setTimeout(function () {
-            btnCopyNanoBannerPrompt.textContent = originalText;
-          }, 2000);
-        })
-        .catch(function (err) {
-          alert("复制失败，请检查浏览器剪贴板权限：" + err);
-        });
+      openPromptModal("🎨 导出 Midjourney 商业级提示词", segments);
     });
   }
 
-  // ================= 导出 Nano Banner 纯净提示词（无 MJ 参数） =================
   var btnCopyOriginalNanoBanner = document.getElementById("btnCopyOriginalNanoBanner");
   if (btnCopyOriginalNanoBanner) {
     btnCopyOriginalNanoBanner.addEventListener("click", function () {
       var data = window.__LAST_STORYBOARD_DATA__;
-      if (!data || !data.length) return alert("暂无分镜数据可复制，请先生成脚本。");
+      if (!data || !data.length) return alert("暂无分镜数据，请先生成脚本。");
 
       var activeTabBtn = document.querySelector(".tab-btn.is-active");
       var sIdx = activeTabBtn ? parseInt(String(activeTabBtn.dataset.tab || "0"), 10) : 0;
@@ -3056,25 +3162,12 @@ ${dynamicPacingBlock}`;
       var productEl = document.getElementById("product-input");
       var productName = (productEl && String(productEl.value || "").trim()) || "luxury product";
 
-      var prompts = style.shots
-        .map(function (shot, i) {
-          var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx);
-          return "【SHOT " + (i + 1) + "】\n" + drawPrompt;
-        })
-        .join("\n\n------------------------\n\n");
+      var segments = style.shots.map(function (shot, i) {
+        var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx);
+        return { content: drawPrompt };
+      });
 
-      navigator.clipboard
-        .writeText(prompts)
-        .then(function () {
-          var originalText = btnCopyOriginalNanoBanner.textContent;
-          btnCopyOriginalNanoBanner.textContent = "✅ 已复制 Nano Banner 提示词！";
-          setTimeout(function () {
-            btnCopyOriginalNanoBanner.textContent = originalText;
-          }, 2000);
-        })
-        .catch(function (err) {
-          alert("复制失败，请检查浏览器剪贴板权限：" + err);
-        });
+      openPromptModal("📝 导出 Nano Banner 提示词", segments);
     });
   }
 })();
