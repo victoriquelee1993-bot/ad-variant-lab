@@ -1519,67 +1519,40 @@
       var productLabelForStyle = String(p.product != null ? p.product : "未填写");
       var categoryLabelForStyle = p.category && String(p.category).trim() ? String(p.category).trim() : "未分类";
 
-      // 真正的创意总监思维：不是套视觉模板，而是根据索引 (styleIndex) 分配 3 种完全不同的商业推导策略
       var dynamicCreativeAngle = "";
       if (styleCfg.id === "A" || styleIndex === 0) {
-        dynamicCreativeAngle = "【策略方向一：本体隐喻与极致功能演绎 (Product as Hero / Metaphor)】\n" +
-                               "核心推导：无论【" + productLabelForStyle + "】是实体商品还是虚拟服务，请深挖其最硬核的物理/技术特性。绝不平铺直叙！必须将其核心卖点转化为视觉隐喻。\n" +
-                               "（举例指导：如果是香水，将味道具象化为爆炸的荆棘；如果是B2B软件，将数据具象化为流动的光瀑；如果是食品，展现食材最极端的物理质感）。展现该品类最极致的专业度与降维打击感。";
+        dynamicCreativeAngle = "【策略方向一：微观解构与纯粹质感 (Precision & Macro)】\n" +
+                               "核心推导：完全抛弃人物和生活场景！这是一个极度克制、甚至有无菌实验室感的工业级广告。镜头语言必须是极致的微距 (Macro)、探针镜头穿梭、以及光影在材质表面的物理反应。用冰冷、专业的视觉剖析【" + productLabelForStyle + "】的硬核技术或极致细节。";
       } else if (styleCfg.id === "B" || styleIndex === 1) {
-        dynamicCreativeAngle = "【策略方向二：场景重塑与人文共情 (Consumer Insight / Empathy)】\n" +
-                               "核心推导：不要盯着产品看，去盯【使用它的人】！结合【" + categoryLabelForStyle + "】行业的真实痛点，展示没有该产品时的困境，以及使用后的生活流/工作流蜕变。\n" +
-                               "（举例指导：无论卖的是跑车、护肤品还是农用机械，主角永远是有血有肉的人。产品只是解决痛点的钥匙。大量使用生活化、有呼吸感的场景设定，激发观众的同理心与代入感）。";
+        dynamicCreativeAngle = "【策略方向二：场景重塑与人文共情 (Lifestyle & Empathy)】\n" +
+                               "核心推导：不要死盯产品！将视角转向【使用它的人】和真实的生活空间。结合【" + categoryLabelForStyle + "】的行业痛点，展示生活流的蜕变。必须包含人物的神态、肢体交互，产品只是作为解决痛点或提升情绪的「自然道具」融入场景。";
       } else {
-        dynamicCreativeAngle = "【策略方向三：反常识奇观与平台原生网感 (Disruptive / Platform-Native)】\n" +
-                               "核心推导：针对【" + platformStr + "】的受众习惯，抛弃所有传统广告语境！制造强烈的视觉反差、甚至略带荒诞的实验性测试。\n" +
-                               "（举例指导：打破第四面墙的人物独白、极具反差的极端环境测试、极高密度的蒙太奇快剪、或者放大微小细节的ASMR感官放大）。目的只有一个：在头3秒死死抓住眼球，用最不按常理出牌的方式完成卖点植入。";
+        dynamicCreativeAngle = "【策略方向三：反常识奇观与感官钩子 (Disruptive Hook & ASMR)】\n" +
+                               "核心推导：抛弃传统广告语境，追求极致的视觉冲击力和网感！运用极强烈的色彩反差、极速运镜（Whip pan）、超现实的视觉隐喻（如爆炸、失重、夸张的破坏测试）以及高频的 ASMR 音效。前3秒必须是打破常规的奇观，把观众的眼球死死抓住。";
       }
 
-      // 动态 System Prompt
-      const systemPrompt = `你是一位斩获无数戛纳金狮奖的顶级 4A 广告创意总监兼 TVC 导演。
-你的任务是：基于一份关于【${categoryLabelForStyle}】行业的【${productLabelForStyle}】的项目简报，为其量身定制一份 Client-ready 的分镜脚本。
+      // 动态 System Prompt (增加 eng_prompt 要求以丰富生图多样性)
+      const systemPrompt = `你是一位斩获无数戛纳金狮奖的顶级 TVC 导演。
+你的任务是：基于【${categoryLabelForStyle}】行业的【${productLabelForStyle}】简报，量身定制 Client-ready 的分镜。
 
 【专业导演核心准则（禁止敷衍与套路）】
-1. 动态生成风格：不要套用刻板印象！你必须根据下方的【策略方向】，结合当前产品特性，亲自为其命名一个极具高级感的 \`styleName\`（例如："赛博新古典主义"、"沉浸式痛点解构"），并撰写 \`director_treatment\`（导演阐述你要如何用镜头语言实现该策略）。
-2. 镜头颗粒度：\`visual\` 必须精准描述场景美术、构图与质感；\`motion\` 必须使用专业矢量运镜术语（如 Rack focus, Whip pan, Tracking shot）；\`lighting\` 必须写明工业打光方案（如 Rembrandt lighting, Neon rim light）；\`audio\` 写明音效或旁白情绪。
-3. 空镜与隐喻的必达指令（B-Roll）：绝对禁止写出"从头到尾都在拍产品图"的垃圾脚本！一部好商业片，60% 是环境、隐喻和人物的铺垫（B-Roll）。只有需要点题时，才精准调用素材库中的产品特写图。对于虚构的空镜，\`source_image_id\` 填最接近的素材序号占位即可，但画面必须大胆虚构！
+1. 动态生成风格：必须根据下方的【策略方向】，量身定制一个极具高级感的 \`styleName\`（如"赛博新古典主义"），并撰写 \`director_treatment\`（详细阐述如何用镜头语言实现该策略）。
+2. 镜头颗粒度：\`visual\` 描述构图与质感；\`motion\` 必须用矢量运镜（如 Rack focus, Dolly in）；\`lighting\` 写明工业打光；\`audio\` 描述物理质感音效。
+3. 增加英文生图指令：\`eng_prompt\` 必须用英文精炼描述本镜面的核心视觉动作与构图，禁止只描述产品长相。
 
 ${dynamicCreativeAngle}
 
-你只能输出合法的 JSON，格式要求：{"styleName": "...", "director_treatment": "...", "visualDNA": "...", "shots": [{"source_image_id": 1, "visual": "...", "motion": "...", "start_motion": "...", "end_motion": "...", "audio": "...", "lighting": "...", "pacing": "...", "duration": 3}]}
+严格返回合法的 JSON 格式：{"styleName": "...", "director_treatment": "...", "visualDNA": "...", "shots": [{"source_image_id": 1, "visual": "...", "eng_prompt": "...", "motion": "...", "start_motion": "...", "end_motion": "...", "audio": "...", "lighting": "...", "pacing": "...", "duration": 3}]}
 ${buildUniversalBindingPromptBlock(catalogSlotCount)}
 ${dynamicPacingBlock}`;
 
       var userTextBlock =
-        "【投放平台】：" +
-        (platformStr || "未指定") +
-        "\n" +
-        "【总时长目标】：" +
-        targetMin +
-        "-" +
-        targetMax +
-        "s\n" +
-        "【产品定位与核心卖点】：\n" +
-        "产品：" +
-        String(p.product != null ? p.product : "未填写") +
-        " (" +
-        (p.category && String(p.category).trim() ? String(p.category).trim() : "未分类") +
-        ")\n" +
-        "简报：" +
-        String(p.brief != null ? p.brief : "无") +
-        "\n" +
-        "【场景库】：" +
-        usageScenariosForPrompt +
-        "\n\n" +
-        "⚡【顶级 TVC 叙事法则（防纯产品切片死命令）】：\n" +
-        "一部满分的商业广告，绝对不能从头到尾只拍产品！那不是广告，是无聊的产品说明书。你必须采用【人/情绪/隐喻 + 产品交织】的顶级蒙太奇结构：\n" +
-        "1. 必须虚构 B-Roll 与视觉隐喻：大胆创造不在素材库中的画面！如抽象的光影、翻涌的海浪、瞳孔特写、疾驰的跑车等，用来建立情绪基调。\n" +
-        "2. 必须引入活生生的人物：写出人物的神态、肢体（如整理领带、指尖划过水面、极具张力的眼神）。\n" +
-        "3. 镜头分配比例（黄金法则）：全片中，纯产品特写镜头（来自素材库）最多只能占 40%。其余 60% 的镜头，必须是你虚构的、充满电影感的人物、环境、隐喻或 B-Roll 空镜！\n" +
-        "对于你虚构的 B-Roll 或人物镜头，`source_image_id` 请依然填入一个最相近的场景或情绪图索引（以供占位），但你的 `visual` 描述必须天马行空，充满电影感，绝不能局限于原图！\n\n" +
-        "【本套风格编号：" +
-        styleCfg.name +
-        "】\n请严格遵循 system 中的「动态品类风格裂变」铁律：重写顶层 \`styleName\` 为专属创意名，禁止套用实验室风/快剪等固定模板。\n\n指令：请仔细观察提供的产品图，结合卖点、品类和平台特性设计分镜。强制要求：1. Visual/Motion/Lighting 达到 Client-ready 颗粒度。2. \`visualDNA\` 输出 Midjourney 级英文摄影基底。3. 每镜 \`source_image_id\` 严格对应素材库。\n" +
+        "【投放平台】：" + (platformStr || "未指定") + "\n" +
+        "【总时长目标】：" + targetMin + "-" + targetMax + "s\n" +
+        "【产品定位与核心卖点】：\n产品：" + productLabelForStyle + "\n简报：" + String(p.brief != null ? p.brief : "无") + "\n" +
+        "【场景库】：" + usageScenariosForPrompt + "\n\n" +
+        "【本套风格编号：" + styleCfg.name + "】\n" +
+        "指令：请严格遵循 system 中的策略方向！重写顶层 \`styleName\`。如果本风格要求写人，就重写人物动作；如果本风格要求微距，就绝对不要出现人。每镜的 visual 必须天马行空，绝不能局限于原图素材！\n" +
         gridHint;
 
       var userContent = [{ type: "text", text: userTextBlock }];
@@ -1594,7 +1567,6 @@ ${dynamicPacingBlock}`;
 
       // ====== 🚀 分批流水线生成 (Batching) 开始 ======
       var currentShots = [];
-      var previousAssistantContent = "";
       var batchSize = 12; // 绝对安全区：每次最多逼 AI 吐 12 镜，防断流
       var batchCount = 0;
       var maxBatches = Math.ceil(targetNodes / batchSize) + 1; // 防死循环兜底
@@ -1656,28 +1628,28 @@ ${dynamicPacingBlock}`;
         if (batchCount === 1) {
           currentSystemPrompt +=
             "\n\n" + narrativePhase + "\n\n" + batchBlueprintStr +
-            "\n\n【分批策略指令】：这是第 1 批，本批输出 " + shotsToRequest + " 个镜头。请按三幕叙事弧光展开开篇，为后续幕次预留剧情空间；仅输出合法 JSON。";
+            "\n\n【分批策略指令】：这是第 1 批，输出 " + shotsToRequest + " 个镜头。请按三幕叙事弧光开篇，仅输出合法 JSON。";
         } else if (batchCount > 1 && lastShotContext) {
           var deficit = targetNodes - currentShots.length;
+          var pastVisuals = currentShots.map(function (s, idx) { return "镜头" + (idx + 1) + ": " + s.visual; }).join(" | ");
           currentSystemPrompt +=
             "\n\n" + narrativePhase + "\n\n" + batchBlueprintStr +
-            "\n\n【分批串联指令】：这是第 " + batchCount + " 批请求。请顺滑承接上一镜，补充至少 " +
-            Math.min(batchSize, deficit) + " 个镜头。上一镜的画面是：「" + lastShotContext.visual + "」。\n" +
-            "【防雷同警告】：绝不允许重复刚才已用过的画面结构和句式！必须强制执行蒙太奇跳跃向下推进剧情。";
+            "\n\n【分批串联指令】：这是第 " + batchCount + " 批请求。需补充至少 " + Math.min(batchSize, deficit) + " 个镜头。\n" +
+            "上一镜落幅是：「" + lastShotContext.visual + "」。\n" +
+            "🛑【核弹级防重复死命令】：以下是前文已生成的镜头摘要：[" + pastVisuals + "]。\n" +
+            "你接下来的镜头，【绝对禁止】使用上述出现过的场景、动作结构或句式！必须通过蒙太奇跳跃、景别切换或引入新视角向下推进剧情！";
         }
 
         var batchSuccess = false;
-        // 每批次最多允许重试 2 次
         for (var attempt = 1; attempt <= 2; attempt++) {
           try {
             var currentMessages = [
               { role: "system", content: currentSystemPrompt },
               { role: "user", content: userContent },
             ];
-            // 核心记忆修复：带上上一批的 JSON 结果
-            if (batchCount > 1 && previousAssistantContent) {
-              currentMessages.splice(1, 0, { role: "assistant", content: previousAssistantContent });
-            }
+
+            var dynamicTemp = styleCfg.id === "C" ? 0.85 : 0.7;
+            if (attempt > 1) dynamicTemp += 0.1;
 
             const res = await llmApiFetch("chat/completions", {
               label: styleCfg.name + " 分镜 (批次 " + batchCount + ")",
@@ -1686,7 +1658,7 @@ ${dynamicPacingBlock}`;
               body: JSON.stringify({
                 model: window.getTextModel(),
                 max_tokens: 8192,
-                temperature: attempt === 1 ? 0.7 : 0.85,
+                temperature: dynamicTemp,
                 messages: currentMessages,
                 response_format: { type: "json_object" },
               }),
@@ -1701,7 +1673,6 @@ ${dynamicPacingBlock}`;
                 data.choices[0].message.content) ||
                 ""
             );
-            previousAssistantContent = originalContent;
             if (!originalContent.trim()) throw new Error("批次响应为空");
             fullContentLogs.push(originalContent);
 
@@ -2545,7 +2516,7 @@ ${dynamicPacingBlock}`;
   function getStyleMoodSuffix(style, sIdx) {
     var name = String((style && style.styleName) || "");
     if (/style\s*a\b/i.test(name) || (sIdx === 0 && !/style\s*[bc]\b/i.test(name))) {
-      return "Sterile clean environment, macro probe lens, pure white and grey background, extreme micro-details, sharp focus, NO clutter, pristine material texture.";
+      return "macro probe lens, extreme micro-details, sharp focus, pristine material texture, high-end sterile commercial look.";
     }
     if (/style\s*b\b/i.test(name) || sIdx === 1) {
       return "High-end lifestyle photography, warm afternoon sunlight, beautiful depth of field, blurred background, cinematic bokeh, authentic and elegant.";
@@ -2595,37 +2566,30 @@ ${dynamicPacingBlock}`;
     );
   }
 
-  function buildVisualDrawPrompt(shot, style, productName, sIdx) {
+  function buildVisualDrawPrompt(shot, style, productName, sIdx, mode) {
+    if (!mode) mode = "mj";
+    var exactProductDescription = style && style.visualDNA ? style.visualDNA : productName;
     var cleanVisual = String(shot.visual || "").replace(/\(参考素材格[^)]+\)/g, "").trim();
-    var exactProductDescription =
-      style && style.visualDNA && String(style.visualDNA).trim()
-        ? String(style.visualDNA).trim()
-        : window.__MASTER_VISUAL_PROMPT__ || productName;
-
-    var catEl = document.getElementById("category-input");
-    var category = catEl ? String(catEl.value || "").trim() : "";
-    var productLabel = String(productName || "").trim();
-
-    var parts = [
-      "Hyper-realistic high-end commercial photography, photorealistic masterpiece, shot on ARRI Alexa 65, Zeiss Master Prime lens, 8k resolution, highly detailed.",
-    ];
-    parts.push(
-      "Material & lighting rig (from category/product match): " + resolveMaterialConstraintLine(productLabel, category)
-    );
-    if (category) parts.push("Industry visual style: Top-tier luxury " + category + " commercial aesthetic, perfectly matching the industry's highest visual standards.");
-
-    parts.push("Product exact appearance: " + exactProductDescription + ".");
-    parts.push("Action/Scene: " + cleanVisual);
-
-    var lighting = shot.lighting != null ? String(shot.lighting).trim() : "";
-    if (lighting) parts.push("Lighting: " + lighting + ", professional studio quality.");
-    var motion = shot.motion != null ? String(shot.motion).trim() : "";
-    if (motion) parts.push("Camera/Motion: " + motion);
-
+    var engPrompt = shot.eng_prompt != null && String(shot.eng_prompt).trim() ? String(shot.eng_prompt).trim() : "";
     var mood = getStyleMoodSuffix(style, sIdx);
-    if (mood) parts.push(mood);
 
-    return parts.join(" ");
+    // 重点：将动作 (engPrompt/cleanVisual) 放前面，将产品描述 (exactProductDescription) 作为从句修饰，防止 AI 只画产品不画动作
+    if (mode === "mj") {
+      return [
+        "Cinematic high-end photography",
+        engPrompt || cleanVisual,
+        "Product details: " + exactProductDescription,
+        mood,
+        "8k resolution, photorealistic, shot on ARRI Alexa",
+      ].join(", ");
+    }
+    return [
+      "Commercial e-commerce banner",
+      engPrompt || cleanVisual,
+      "Product details: " + exactProductDescription,
+      "clean background with negative space for text",
+      "sharp focus, professional studio shot",
+    ].join(", ");
   }
 
   function labSleep(ms) {
@@ -3136,7 +3100,7 @@ ${dynamicPacingBlock}`;
       var mjSuffix = " --style raw --v 6.0 --q 2 " + ar;
 
       var segments = style.shots.map(function (shot, i) {
-        var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx);
+        var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx, "mj");
         return { content: "/imagine prompt: " + drawPrompt + mjSuffix };
       });
 
@@ -3163,7 +3127,7 @@ ${dynamicPacingBlock}`;
       var productName = (productEl && String(productEl.value || "").trim()) || "luxury product";
 
       var segments = style.shots.map(function (shot, i) {
-        var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx);
+        var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx, "nano");
         return { content: drawPrompt };
       });
 
