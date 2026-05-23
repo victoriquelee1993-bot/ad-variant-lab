@@ -1521,28 +1521,28 @@
 
       var dynamicCreativeAngle = "";
       if (styleCfg.id === "A" || styleIndex === 0) {
-        dynamicCreativeAngle = "【策略方向一：微观解构与纯粹质感 (Precision & Macro)】\n" +
-                               "核心推导：完全抛弃人物和生活场景！这是一个极度克制、甚至有无菌实验室感的工业级广告。镜头语言必须是极致的微距 (Macro)、探针镜头穿梭、以及光影在材质表面的物理反应。用冰冷、专业的视觉剖析【" + productLabelForStyle + "】的硬核技术或极致细节。";
+        dynamicCreativeAngle = "【策略方向一：纯粹工业微观 (Pure Macro & Physics)】\n" +
+                               "核心推导：这是一个极度克制、无菌实验室感的广告。绝对禁止出现任何人物、生活场景或抽象隐喻！全片 100% 聚焦于产品的物理结构、微观纹理（Macro）和光影的物理反应。像科学家一样解剖它！";
       } else if (styleCfg.id === "B" || styleIndex === 1) {
-        dynamicCreativeAngle = "【策略方向二：场景重塑与人文共情 (Lifestyle & Empathy)】\n" +
-                               "核心推导：不要死盯产品！将视角转向【使用它的人】和真实的生活空间。结合【" + categoryLabelForStyle + "】的行业痛点，展示生活流的蜕变。必须包含人物的神态、肢体交互，产品只是作为解决痛点或提升情绪的「自然道具」融入场景。";
+        dynamicCreativeAngle = "【策略方向二：人文呼吸感 (Human & Lifestyle)】\n" +
+                               "核心推导：【产品只是配角，人才是主角】！镜头必须由人物的动作、神态（如眼神、指尖）以及充满呼吸感的真实生活场景主导。弱化冷冰冰的工业感，用带有温度的生活流画面引出产品。";
       } else {
-        dynamicCreativeAngle = "【策略方向三：反常识奇观与感官钩子 (Disruptive Hook & ASMR)】\n" +
-                               "核心推导：抛弃传统广告语境，追求极致的视觉冲击力和网感！运用极强烈的色彩反差、极速运镜（Whip pan）、超现实的视觉隐喻（如爆炸、失重、夸张的破坏测试）以及高频的 ASMR 音效。前3秒必须是打破常规的奇观，把观众的眼球死死抓住。";
+        dynamicCreativeAngle = "【策略方向三：反常识蒙太奇 (Disruptive Montage)】\n" +
+                               "核心推导：抛弃传统广告，追求极致感官刺激！画面必须是「极端意象」与「产品局部」的疯狂跳切（Match Cut）。例如：用翻滚的海浪跳切到表盘、用炸裂的火花跳切到金属外壳。用毫无关联的奇观隐喻来制造强烈的 ASMR 与视觉冲击！";
       }
 
-      // 动态 System Prompt (增加 eng_prompt 要求以丰富生图多样性)
-      const systemPrompt = `你是一位斩获无数戛纳金狮奖的顶级 TVC 导演。
+      // 动态 System Prompt
+      const systemPrompt = `你是一位斩获戛纳金狮奖的顶级 TVC 导演。
 你的任务是：基于【${categoryLabelForStyle}】行业的【${productLabelForStyle}】简报，量身定制 Client-ready 的分镜。
 
-【专业导演核心准则（禁止敷衍与套路）】
-1. 动态生成风格：必须根据下方的【策略方向】，量身定制一个极具高级感的 \`styleName\`（如"赛博新古典主义"），并撰写 \`director_treatment\`（详细阐述如何用镜头语言实现该策略）。
-2. 镜头颗粒度：\`visual\` 描述构图与质感；\`motion\` 必须用矢量运镜（如 Rack focus, Dolly in）；\`lighting\` 写明工业打光；\`audio\` 描述物理质感音效。
-3. 增加英文生图指令：\`eng_prompt\` 必须用英文精炼描述本镜面的核心视觉动作与构图，禁止只描述产品长相。
+【导演核心铁律】
+1. 风格裂变：必须严格按照下方的【策略方向】行事，起一个高级的 \`styleName\`，并写 \`director_treatment\`。
+2. 镜头颗粒度：\`motion\` 必用矢量运镜；\`lighting\` 写明工业光影；\`audio\` 写物理质感音效。
+3. 英文生图词 \`eng_prompt\`：用精炼英文描述本镜核心视觉动作，不要只写产品。
 
 ${dynamicCreativeAngle}
 
-严格返回合法的 JSON 格式：{"styleName": "...", "director_treatment": "...", "visualDNA": "...", "shots": [{"source_image_id": 1, "visual": "...", "eng_prompt": "...", "motion": "...", "start_motion": "...", "end_motion": "...", "audio": "...", "lighting": "...", "pacing": "...", "duration": 3}]}
+严格返回合法 JSON：{"styleName": "...", "director_treatment": "...", "visualDNA": "...", "shots": [{"source_image_id": 1, "visual": "...", "eng_prompt": "...", "motion": "...", "start_motion": "...", "end_motion": "...", "audio": "...", "lighting": "...", "pacing": "...", "duration": 3}]}
 ${buildUniversalBindingPromptBlock(catalogSlotCount)}
 ${dynamicPacingBlock}`;
 
@@ -1552,7 +1552,6 @@ ${dynamicPacingBlock}`;
         "【产品定位与核心卖点】：\n产品：" + productLabelForStyle + "\n简报：" + String(p.brief != null ? p.brief : "无") + "\n" +
         "【场景库】：" + usageScenariosForPrompt + "\n\n" +
         "【本套风格编号：" + styleCfg.name + "】\n" +
-        "指令：请严格遵循 system 中的策略方向！重写顶层 \`styleName\`。如果本风格要求写人，就重写人物动作；如果本风格要求微距，就绝对不要出现人。每镜的 visual 必须天马行空，绝不能局限于原图素材！\n" +
         gridHint;
 
       var userContent = [{ type: "text", text: userTextBlock }];
@@ -1582,62 +1581,62 @@ ${dynamicPacingBlock}`;
           10 + (currentShots.length / targetNodes) * 30
         );
 
-        // --- 1. 工业级重构：由 JS 引擎强制生成无序序列，剥夺 AI 的排列自由 ---
+        // --- 1. 工业级重构：强制生成序列，但赋予“脑补”特权 ---
         var batchBlueprintStr = "";
         if (catalogSlotCount > 1) {
           var blueprintIds = [];
           var recentIds = [];
-          // 记录最近使用过的两个镜头，避免微观重复
           if (currentShots.length > 0) recentIds.push(parseInt(currentShots[currentShots.length - 1].source_image_id, 10));
           if (currentShots.length > 1) recentIds.push(parseInt(currentShots[currentShots.length - 2].source_image_id, 10));
 
-          // 算法生成打乱的素材阵列
           for (var bi = 0; bi < shotsToRequest; bi++) {
             var pool = [];
             for (var c = 1; c <= catalogSlotCount; c++) {
-              // 确保当前选取的图与前两镜不重复，彻底打破 123456 的连号循环
               if (recentIds.indexOf(c) === -1) pool.push(c);
             }
-            if (pool.length === 0) pool = [1]; // 极端情况兜底
-            
+            if (pool.length === 0) pool = [1];
             var pick = pool[Math.floor(Math.random() * pool.length)];
             blueprintIds.push(pick);
-            
             recentIds.unshift(pick);
             if (recentIds.length > 2) recentIds.pop();
           }
-          
-          batchBlueprintStr = "【系统底层架构指令·最高优先级】：本批次 " + shotsToRequest + " 个镜头的 `source_image_id` 已经被系统底层代码锁定。\n" +
-                              "你必须【严格、依次】使用以下素材序列：" + blueprintIds.join(" -> ") + "。绝对禁止擅自更改此顺序！\n" +
-                              "你的任务是：根据这个被彻底打乱的物理素材序列，运用蒙太奇手法（改变景别、切换冷暖光影、替换焦点或ASMR音效），将它们强行串联成符合当前幕次特性的流畅剧本。";
+
+          batchBlueprintStr = "【系统底层锁定】：本批次的 `source_image_id` 序列已锁定为：" + blueprintIds.join(" -> ") + "。\n" +
+                              "⚠️【核弹级豁免权】：如果当前风格要求你写人物、生活场景或抽象奇观（特别是 Style B 和 C 的开场），请你【完全无视】该素材图里真正画了什么！尽情虚构你要的电影画面，把这个 ID 纯粹当成后台占位符！绝不要被素材绑架！";
         } else {
-          batchBlueprintStr = "【单素材变奏指令】：当前只有 1 张素材。你必须通过变换光影、极度微距（Rack focus）、人物互动等手段，制造不同的镜头画面，严禁重复描述。";
+          batchBlueprintStr = "【单素材变奏】：仅1张图。请运用极度微距、光影切换或人物遮挡等手段制造画面差异。";
         }
 
-        // --- 2. 动态构建当前批次的系统 Prompt（三幕剧叙事弧光） ---
+        // --- 2. 动态构建三幕剧（为每个风格彻底定制第一幕） ---
         var narrativePhase = "";
         if (batchCount === 1) {
-          narrativePhase = "【第一幕：情绪钩子 (The Hook) & 建立世界观】本批次请重点写【非产品】镜头。用抽象隐喻、人物特写、极具张力的环境空镜起手。即使必须露出产品，也只能是极度的冰山一角或模糊的失焦背景。制造悬念！";
+          if (styleCfg.id === "A" || styleIndex === 0) {
+            narrativePhase = "【第一幕：微观入局 (The Micro-Hook)】第一镜直接怼进产品的最深处！写极致的微观材质、机械咬合或反光。绝不出现人和大环境，纯粹的物理暴力美学。";
+          } else if (styleCfg.id === "B" || styleIndex === 1) {
+            narrativePhase = "【第一幕：人文悬念 (The Human Hook)】第一镜【绝对禁止】产品出现！必须用人物的局部特写（如手、背影、眼神）或充满氛围感的生活空镜起手，建立情绪。";
+          } else {
+            narrativePhase = "【第一幕：奇观暴击 (The Disruptive Hook)】第一镜【绝对禁止】产品出现！必须是一个极具视觉冲击力的隐喻（例如：水滴炸裂、瞳孔骤缩、燃烧的引线、极速残影）。先破圈，再引出产品！";
+          }
         } else if (batchCount === 2) {
-          narrativePhase = "【第二幕：冲突/痛点与人物交互】本批次请将人物/环境与产品发生强关联。通过人物的动作（如佩戴、使用、凝视）引出产品。使用场景交互镜头与少量的中景产品镜头。";
+          narrativePhase = "【第二幕：冲突与本体】将前一幕的情感/奇观/微观，与产品的中景或核心功能交互进行强碰撞。开始穿插动作展示。";
         } else {
-          narrativePhase = "【第三幕：视觉高潮 (Hero Payoff) & 情绪升华】本批次是产品的高光时刻！现在可以集中释放素材库中的微距、机芯、质感特写。运用极速运镜与高频打光，展现工业级的极致美感，最后以人物的从容神态或顶级场景定格收尾！";
+          narrativePhase = "【第三幕：高潮与定格】释放最高密度的视觉张力！用最极端的运镜展示产品的王者姿态，并以高光定格优雅收尾。";
         }
 
         var currentSystemPrompt = systemPrompt;
         if (batchCount === 1) {
           currentSystemPrompt +=
             "\n\n" + narrativePhase + "\n\n" + batchBlueprintStr +
-            "\n\n【分批策略指令】：这是第 1 批，输出 " + shotsToRequest + " 个镜头。请按三幕叙事弧光开篇，仅输出合法 JSON。";
+            "\n\n【指令】：这是第 1 批。请按上述第一幕要求震撼开场，仅输出合法 JSON。";
         } else if (batchCount > 1 && lastShotContext) {
           var deficit = targetNodes - currentShots.length;
-          var pastVisuals = currentShots.map(function (s, idx) { return "镜头" + (idx + 1) + ": " + s.visual; }).join(" | ");
+          var pastVisuals = currentShots.map(function (s, idx) { return "Shot " + (idx + 1) + ": " + s.visual; }).join(" | ");
+
           currentSystemPrompt +=
             "\n\n" + narrativePhase + "\n\n" + batchBlueprintStr +
-            "\n\n【分批串联指令】：这是第 " + batchCount + " 批请求。需补充至少 " + Math.min(batchSize, deficit) + " 个镜头。\n" +
-            "上一镜落幅是：「" + lastShotContext.visual + "」。\n" +
-            "🛑【核弹级防重复死命令】：以下是前文已生成的镜头摘要：[" + pastVisuals + "]。\n" +
-            "你接下来的镜头，【绝对禁止】使用上述出现过的场景、动作结构或句式！必须通过蒙太奇跳跃、景别切换或引入新视角向下推进剧情！";
+            "\n\n【串联指令】：这是第 " + batchCount + " 批。上一镜落幅是：「" + lastShotContext.visual + "」。\n" +
+            "🛑【防雷同死命令】：以下是前文已生成的镜头摘要：[" + pastVisuals + "]。\n" +
+            "接下来的镜头【绝对禁止】复用上述场景或句式！必须通过蒙太奇跳跃或全新景别向下推进！";
         }
 
         var batchSuccess = false;
