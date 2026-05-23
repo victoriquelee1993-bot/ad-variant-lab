@@ -905,13 +905,16 @@
       return /style\s*c\b/i.test(nm);
     }
 
-    /** Style C：单镜不得超过 2.5s，违规则抛错要求模型重写 */
+    /** Style C：普通单镜不得超过 2.5s；宫格/分屏/阵列镜豁免（可承载更长秒数） */
     function assertStyleCShotDurationLimit(shots, phase) {
       var maxSec = 2.5;
       var bad = [];
+      var GRID_VISUAL_CAP_RE = /宫格|分屏|阵列/;
       var si;
       for (si = 0; si < shots.length; si++) {
         if (!shots[si]) continue;
+        var vis = String(shots[si].visual || "");
+        if (GRID_VISUAL_CAP_RE.test(vis)) continue;
         var d = parseFloat(shots[si].duration);
         if (!isNaN(d) && d > maxSec + 0.02) bad.push({ idx: si + 1, dur: roundDurD(d) });
       }
@@ -924,7 +927,7 @@
       throw new Error(
         "Style C 极速快剪时长违规（" +
           phase +
-          "）：单镜严禁超过 " +
+          "）：普通单镜严禁超过 " +
           maxSec +
           "s，检测到：" +
           detail +
@@ -978,9 +981,9 @@
       var GRID_VISUAL_CAP_RE = /宫格|分屏|阵列/;
 
       function shotMaxDurationCap(shot) {
-        if (styleC) return 2.5;
         var vis = String(shot && shot.visual != null ? shot.visual : "");
         if (GRID_VISUAL_CAP_RE.test(vis)) return hi * 0.5;
+        if (styleC) return 2.5;
         return 5;
       }
 
@@ -1108,7 +1111,10 @@
 
       if (rawSum < 1e-6) {
         if (styleC) {
-          for (i = 0; i < shots.length; i++) shots[i].duration = STYLE_C_SHOT_CAP_SEC;
+          for (i = 0; i < shots.length; i++) {
+            if (GRID_VISUAL_CAP_RE.test(String(shots[i].visual || ""))) continue;
+            shots[i].duration = STYLE_C_SHOT_CAP_SEC;
+          }
         } else {
           var mid0 = roundDurD((lo + hi) / 2);
           var per0 = Math.max(0.25, roundDurD(mid0 / shots.length));
@@ -1192,14 +1198,19 @@
       if (styleC && totFinal < lo - 0.02) {
         var capSum = roundDurD(shots.length * STYLE_C_SHOT_CAP_SEC);
         if (capSum >= lo - 0.02) {
-          for (i = 0; i < shots.length; i++) shots[i].duration = STYLE_C_SHOT_CAP_SEC;
-          totFinal = capSum;
+          for (i = 0; i < shots.length; i++) {
+            if (GRID_VISUAL_CAP_RE.test(String(shots[i].visual || ""))) continue;
+            shots[i].duration = STYLE_C_SHOT_CAP_SEC;
+          }
+          totFinal = 0;
+          for (i = 0; i < shots.length; i++) totFinal += parseFloat(shots[i].duration) || 0;
+          totFinal = roundDurD(totFinal);
           if (totFinal > hi + 0.02) {
             var sc = hi / totFinal;
             totFinal = 0;
             for (i = 0; i < shots.length; i++) {
               shots[i].duration = roundDurD(
-                Math.min(STYLE_C_SHOT_CAP_SEC, (parseFloat(shots[i].duration) || 0) * sc)
+                Math.min(shotMaxDurationCap(shots[i]), (parseFloat(shots[i].duration) || 0) * sc)
               );
               totFinal += shots[i].duration;
             }
@@ -1539,6 +1550,7 @@
 1. 风格裂变：必须严格按照下方的【策略方向】行事，起一个高级的 \`styleName\`，并写 \`director_treatment\`。
 2. 镜头颗粒度：\`motion\` 必用矢量运镜；\`lighting\` 写明工业光影；\`audio\` 写物理质感音效。
 3. 英文生图词 \`eng_prompt\`：用精炼英文描述本镜核心视觉动作，不要只写产品。
+4. 🛑【语言死纪律】：除 \`eng_prompt\` 必须是纯英文外，其余所有字段（visual, motion, audio, lighting 等）必须【全部使用纯正的中文】！绝对禁止中英混杂！
 
 ${dynamicCreativeAngle}
 
@@ -1577,11 +1589,11 @@ ${dynamicPacingBlock}`;
         var shotsToRequest = Math.min(batchSize, maxNodes - currentShots.length);
 
         setStoryEngineProgress(
-          styleCfg.name + " 正在分批生成 (第 " + batchCount + " 批)... 已完成 " + currentShots.length + "/" + targetNodes + " 镜", 
+          styleCfg.name + " 正在分批生成 (第 " + batchCount + " 批)... 已完成 " + currentShots.length + "/" + targetNodes + " 镜",
           10 + (currentShots.length / targetNodes) * 30
         );
 
-        // --- 1. 工业级重构：强制生成序列，但赋予“脑补”特权 ---
+        // --- 1. 强制生成序列，但赋予素材“脑补”特权 ---
         var batchBlueprintStr = "";
         if (catalogSlotCount > 1) {
           var blueprintIds = [];
@@ -1601,42 +1613,74 @@ ${dynamicPacingBlock}`;
             if (recentIds.length > 2) recentIds.pop();
           }
 
-          batchBlueprintStr = "【系统底层锁定】：本批次的 `source_image_id` 序列已锁定为：" + blueprintIds.join(" -> ") + "。\n" +
-                              "⚠️【核弹级豁免权】：如果当前风格要求你写人物、生活场景或抽象奇观（特别是 Style B 和 C 的开场），请你【完全无视】该素材图里真正画了什么！尽情虚构你要的电影画面，把这个 ID 纯粹当成后台占位符！绝不要被素材绑架！";
+          batchBlueprintStr =
+            "【系统底层锁定】：本批次的 `source_image_id` 序列已锁定为：" +
+            blueprintIds.join(" -> ") +
+            "。\n" +
+            "⚠️【核弹级豁免权】：如果当前风格要求你写人物、生活场景或抽象奇观（特别是 Style B 和 C 的开场），请你【完全无视】该素材图里真正画了什么！尽情虚构你要的电影画面，把这个 ID 纯粹当成后台占位符！绝不要被素材绑架！";
         } else {
           batchBlueprintStr = "【单素材变奏】：仅1张图。请运用极度微距、光影切换或人物遮挡等手段制造画面差异。";
         }
 
-        // --- 2. 动态构建三幕剧（为每个风格彻底定制第一幕） ---
+        // --- 2. 动态构建大厂商业片三幕剧锚点 ---
         var narrativePhase = "";
         if (batchCount === 1) {
           if (styleCfg.id === "A" || styleIndex === 0) {
-            narrativePhase = "【第一幕：微观入局 (The Micro-Hook)】第一镜直接怼进产品的最深处！写极致的微观材质、机械咬合或反光。绝不出现人和大环境，纯粹的物理暴力美学。";
+            narrativePhase =
+              "【第一幕：微观入局 (The Micro-Hook)】第一镜直接怼进产品的最深处！写极致的微观材质、机械咬合或反光。绝不出现人和大环境，纯粹的物理暴力美学。";
           } else if (styleCfg.id === "B" || styleIndex === 1) {
-            narrativePhase = "【第一幕：人文悬念 (The Human Hook)】第一镜【绝对禁止】产品出现！必须用人物的局部特写（如手、背影、眼神）或充满氛围感的生活空镜起手，建立情绪。";
+            narrativePhase =
+              "【第一幕：人文悬念 (The Human Hook)】第一镜【绝对禁止】产品出现！必须用人物的局部特写（如手、背影、眼神）或充满氛围感的生活空镜起手，建立情绪。";
           } else {
-            narrativePhase = "【第一幕：奇观暴击 (The Disruptive Hook)】第一镜【绝对禁止】产品出现！必须是一个极具视觉冲击力的隐喻（例如：水滴炸裂、瞳孔骤缩、燃烧的引线、极速残影）。先破圈，再引出产品！";
+            narrativePhase =
+              "【第一幕：奇观暴击 (The Disruptive Hook)】第一镜【绝对禁止】产品出现！必须是一个极具视觉冲击力的隐喻（例如：水滴炸裂、瞳孔骤缩、燃烧的引线、极速残影）。先破圈，再引出产品！";
           }
         } else if (batchCount === 2) {
-          narrativePhase = "【第二幕：冲突与本体】将前一幕的情感/奇观/微观，与产品的中景或核心功能交互进行强碰撞。开始穿插动作展示。";
+          narrativePhase =
+            "【第二幕：冲突与本体】将前一幕的情感/奇观/微观，与产品的中景或核心功能交互进行强碰撞。开始穿插动作展示。";
         } else {
-          narrativePhase = "【第三幕：高潮与定格】释放最高密度的视觉张力！用最极端的运镜展示产品的王者姿态，并以高光定格优雅收尾。";
+          narrativePhase =
+            "【第三幕：高潮与定格】释放最高密度的视觉张力！用最极端的运镜展示产品的王者姿态，并以高光定格优雅收尾。";
         }
 
         var currentSystemPrompt = systemPrompt;
         if (batchCount === 1) {
           currentSystemPrompt +=
-            "\n\n" + narrativePhase + "\n\n" + batchBlueprintStr +
-            "\n\n【指令】：这是第 1 批。请按上述第一幕要求震撼开场，仅输出合法 JSON。";
+            "\n\n" +
+            narrativePhase +
+            "\n\n" +
+            batchBlueprintStr +
+            "\n\n🚨【强制定量指令】：这是第 1 批。你【必须且只能】精确输出 " +
+            shotsToRequest +
+            " 个镜头！请将这 " +
+            shotsToRequest +
+            " 镜合理分配在开场和铺垫中。少于 " +
+            shotsToRequest +
+            " 镜将被判定为生产事故！仅输出合法 JSON。";
         } else if (batchCount > 1 && lastShotContext) {
           var deficit = targetNodes - currentShots.length;
-          var pastVisuals = currentShots.map(function (s, idx) { return "Shot " + (idx + 1) + ": " + s.visual; }).join(" | ");
+          var pastVisuals = currentShots
+            .map(function (s, idx) {
+              return "Shot " + (idx + 1) + ": " + s.visual;
+            })
+            .join(" | ");
 
           currentSystemPrompt +=
-            "\n\n" + narrativePhase + "\n\n" + batchBlueprintStr +
-            "\n\n【串联指令】：这是第 " + batchCount + " 批。上一镜落幅是：「" + lastShotContext.visual + "」。\n" +
-            "🛑【防雷同死命令】：以下是前文已生成的镜头摘要：[" + pastVisuals + "]。\n" +
-            "接下来的镜头【绝对禁止】复用上述场景或句式！必须通过蒙太奇跳跃或全新景别向下推进！";
+            "\n\n" +
+            narrativePhase +
+            "\n\n" +
+            batchBlueprintStr +
+            "\n\n🚨【分批串联指令】：这是第 " +
+            batchCount +
+            " 批请求。请顺滑承接上一镜，继续横向展开故事厚度，补充至少 " +
+            Math.min(batchSize, deficit) +
+            " 个镜头。\n" +
+            "上一镜落幅是：「" +
+            lastShotContext.visual +
+            "」。\n" +
+            "🛑【防雷同死命令】：前文已生成：[" +
+            pastVisuals +
+            "]。接下来的镜头【绝对禁止】复用上述场景或动作结构！必须向下推进剧情！";
         }
 
         var batchSuccess = false;
@@ -1680,45 +1724,47 @@ ${dynamicPacingBlock}`;
 
             if (!tempStyleObj.shots || !Array.isArray(tempStyleObj.shots)) throw new Error("本批次缺少分镜数组");
 
-            // 第一批保存最外层的元数据（含 AI 定制的 styleName）
             if (batchCount === 1) {
-                styleObj.director_treatment = tempStyleObj.director_treatment;
-                styleObj.visualDNA = tempStyleObj.visualDNA;
-                if (tempStyleObj.styleName != null && String(tempStyleObj.styleName).trim()) {
-                  styleObj.styleName = String(tempStyleObj.styleName).trim();
-                }
+              styleObj.director_treatment = tempStyleObj.director_treatment;
+              styleObj.visualDNA = tempStyleObj.visualDNA;
+              if (tempStyleObj.styleName != null && String(tempStyleObj.styleName).trim()) {
+                styleObj.styleName = String(tempStyleObj.styleName).trim();
+              }
             }
 
-            // 将本批次的镜头拼接到总数组中
             currentShots = currentShots.concat(tempStyleObj.shots);
 
-            // 修复 AI 偷懒：仅当彻底吐不出新镜头，或总数达到 targetNodes 时才停止
             if (tempStyleObj.shots.length === 0) {
-              console.warn("AI 彻底停止输出新镜头，强制结束本轮批次。");
               stopBatching = true;
             }
             if (currentShots.length >= targetNodes) {
               stopBatching = true;
             }
 
-            // 记录本批最后一镜，供下一次循环承接使用
             if (currentShots.length > 0) {
-                var ls = currentShots[currentShots.length - 1];
-                lastShotContext = { visual: ls.visual, motion: ls.motion };
+              var ls = currentShots[currentShots.length - 1];
+              lastShotContext = { visual: ls.visual, motion: ls.motion };
             }
 
             batchSuccess = true;
-            break; // 成功则跳出当前批次的重试循环
+            break;
           } catch (e) {
             lastError = e;
-            console.warn(`[批次重试] ${styleCfg.name} 第 ${batchCount} 批次第 ${attempt} 次失败:`, e);
+            console.warn("[批次重试] " + styleCfg.name + " 第 " + batchCount + " 批次第 " + attempt + " 次失败:", e);
           }
         }
-        
-        // 如果某一整个批次连续失败，直接打断 while，拿着已有的镜头强行往下走，绝不抛错卡死！
+
         if (!batchSuccess) {
-            console.warn(`[分批中断] ${styleCfg.name} 第 ${batchCount} 批次彻底失败，带着已生成的 ${currentShots.length} 镜强行进入后续时长校准。`);
-            break;
+          console.warn(
+            "[分批中断] " +
+              styleCfg.name +
+              " 第 " +
+              batchCount +
+              " 批次彻底失败，带着已生成的 " +
+              currentShots.length +
+              " 镜强行进入后续时长校准。"
+          );
+          break;
         }
         if (stopBatching || currentShots.length >= targetNodes) {
           break;
@@ -1727,15 +1773,15 @@ ${dynamicPacingBlock}`;
 
       styleObj.shots = currentShots;
 
-      // 只有当一镜都没生成出来时，才抛出致命错误
       if (!styleObj.shots.length) {
-        throw new Error(styleCfg.name + " 连续生成失败：" + String(lastError && lastError.message ? lastError.message : lastError));
+        throw new Error(
+          styleCfg.name + " 连续生成失败：" + String(lastError && lastError.message ? lastError.message : lastError)
+        );
       }
 
-      // 彻底废除原来的强硬抛错卡死逻辑，改为控制台软警告，强行放行
       var acceptableMin = Math.max(4, Math.floor(targetNodes * 0.5));
       if (styleObj.shots.length < acceptableMin) {
-        console.warn("AI 镜头数偏少，但为了系统稳定已放行：期望 " + targetNodes + " 镜，实际 " + styleObj.shots.length + " 镜。");
+        console.warn("AI 镜头数偏少，已放行：期望 " + targetNodes + " 镜，实际 " + styleObj.shots.length + " 镜。");
       }
       // ====== 🚀 分批流水线生成 (Batching) 结束 ======
 
@@ -1985,7 +2031,7 @@ ${dynamicPacingBlock}`;
           ? window.getLlmApiKeyFromInput()
           : String(document.getElementById("llm-api-key").value || "").trim(),
       imageModel: window.getImageModel(),
-      drawPrompt: buildVisualDrawPrompt(shot, style, productName, sIdx),
+      drawPrompt: buildVisualDrawPrompt(shot, style, productName, sIdx, "dalle"),
       imageSize: imageSize,
     };
     triggerVisualShotRender(renderCtx);
@@ -2566,25 +2612,50 @@ ${dynamicPacingBlock}`;
   }
 
   function buildVisualDrawPrompt(shot, style, productName, sIdx, mode) {
-    if (!mode) mode = "mj";
+    if (!mode) mode = "dalle";
     var exactProductDescription = style && style.visualDNA ? style.visualDNA : productName;
     var cleanVisual = String(shot.visual || "").replace(/\(参考素材格[^)]+\)/g, "").trim();
     var engPrompt = shot.eng_prompt != null && String(shot.eng_prompt).trim() ? String(shot.eng_prompt).trim() : "";
     var mood = getStyleMoodSuffix(style, sIdx);
+    var sceneCore = engPrompt || cleanVisual;
 
-    // 重点：将动作 (engPrompt/cleanVisual) 放前面，将产品描述 (exactProductDescription) 作为从句修饰，防止 AI 只画产品不画动作
+    // DALL·E 轨道：纯英文商业摄影栈，禁止混入 MJ/Nano 专用词与中文 visual 污染
+    if (mode === "dalle") {
+      var categoryEl = document.getElementById("category-input");
+      var category = categoryEl ? String(categoryEl.value || "").trim() : "";
+      var materialLine = resolveMaterialConstraintLine(productName, category);
+      var lighting = shot.lighting != null && String(shot.lighting).trim() ? String(shot.lighting).trim() : "";
+      var motionHint = shot.motion != null && String(shot.motion).trim() ? String(shot.motion).trim() : "";
+      var dalleParts = [
+        "Hyper-realistic commercial product photography, 8K, shot on ARRI Alexa 65, Zeiss Master Prime optics",
+        sceneCore,
+        "Product details: " + exactProductDescription,
+        lighting ? "Lighting rig: " + lighting : "",
+        motionHint ? "Camera motion: " + motionHint : "",
+        materialLine,
+        mood,
+      ];
+      return dalleParts
+        .filter(function (p) {
+          return p && String(p).trim();
+        })
+        .join(", ");
+    }
+
+    // Midjourney：电影摄影流
     if (mode === "mj") {
       return [
         "Cinematic high-end photography",
-        engPrompt || cleanVisual,
+        sceneCore,
         "Product details: " + exactProductDescription,
         mood,
         "8k resolution, photorealistic, shot on ARRI Alexa",
       ].join(", ");
     }
+    // Nano Banner：电商强转化流
     return [
       "Commercial e-commerce banner",
-      engPrompt || cleanVisual,
+      sceneCore,
       "Product details: " + exactProductDescription,
       "clean background with negative space for text",
       "sharp focus, professional studio shot",
@@ -2837,7 +2908,7 @@ ${dynamicPacingBlock}`;
         "display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 24px; direction: ltr; grid-auto-flow: row; justify-items: stretch; align-items: start;";
 
       style.shots.forEach(function (shot, i) {
-          var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx);
+          var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx, "dalle");
 
           var card = document.createElement("div");
           card.className = "visual-shot-card";
@@ -2889,7 +2960,7 @@ ${dynamicPacingBlock}`;
           redrawBtn.addEventListener("click", function (e) {
             e.preventDefault();
             e.stopPropagation();
-            renderCtx.drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx);
+            renderCtx.drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx, "dalle");
             renderCtx.imageModel = window.getImageModel();
             renderCtx.apiKey =
               typeof window.getLlmApiKeyFromInput === "function"
@@ -2913,7 +2984,7 @@ ${dynamicPacingBlock}`;
 
           var vis = document.createElement("div");
           vis.style.cssText = "font-size: 0.85rem; line-height: 1.5; color: var(--text); flex: 1;";
-          // 去掉文本中丑陋的“(参考素材格 #X)”标记，因为上面已经有图了
+          // 💡 精益求精：去掉文本中丑陋的“(参考素材格 #X)”标记，因为上方卡片已渲染直观配图
           vis.textContent = String(shot.visual || "").replace(/\(参考素材格[^)]+\)/g, "").trim();
           content.appendChild(vis);
 
