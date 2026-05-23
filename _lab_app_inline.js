@@ -1538,7 +1538,6 @@
 【严禁重复注水与死循环（防幻觉死命令）】
 - 时长：必须落在 ${targetMin}-${targetMax} 秒之间，单镜 duration 为整数。
 - 叙事推进：**绝对不允许连续 3 个镜头全都在拍产品的微距局部（如无限循环齿轮、表盘特写）！**
-- 你必须严格按此节奏推进：Shot 1 惊艳亮相 -> 局部物理材质特写 -> **必须引入人物交互（如人手佩戴、按压、涂抹等动作）** -> **必须引入真实生活场景与情绪氛围**。如果没有人物和场景，你的剧本将被直接退回！
 
 【输出格式】
 只输出合法的 JSON，结构包含：\`styleName\` (纯中文创意风格名), \`director_treatment\` (**强制纯中文**导演阐述：视觉美术、听觉设计、叙事基调须全部用中文撰写；**严禁**出现任何英文单词或英文句子，仅允许保留产品/品牌等专有名词原文；若含英文将被系统退稿), \`visualDNA\` (纯英文 MJ 提示词), \`shots[]\` (镜头数组)。每镜必填：\`source_image_id\`(严格对应素材库), \`visual\`, \`motion\`, \`start_motion\`, \`end_motion\`, \`audio\`, \`lighting\`, \`pacing\`, \`duration\`(整数)。
@@ -1566,7 +1565,7 @@ ${dynamicPacingBlock}`;
         "【场景库】：" +
         usageScenariosForPrompt +
         "\n\n" +
-        "⚡【单点多维拆解法则（防注水死命令）】：如果简报提供的卖点很少，绝对禁止拉长单镜时长来凑数！你必须把一个单薄的卖点拆解为 4 个视觉维度分镜呈现：1.物理表象(特写材质) 2.动作触发(如何操作/交互) 3.痛点对比(没有它的惨状) 4.情绪收益(使用后的神态/氛围)。必须用高密度的多维镜头填满时长！\n\n" +
+        "⚡【丰富画面信息量（防注水指令）】：如果简报提供的卖点很少，绝对禁止拉长单镜时长来凑数！请结合不同景别、光影变化和当前风格设定的独有特质，将单薄的卖点转化为高密度的多维镜头填满时长。\n\n" +
         "【本套风格编号：" +
         styleCfg.name +
         "】\n请严格遵循 system 中的「动态品类风格裂变」铁律：重写顶层 \`styleName\` 为专属创意名，禁止套用实验室风/快剪等固定模板。\n\n指令：请仔细观察提供的产品图，结合卖点、品类和平台特性设计分镜。强制要求：1. Visual/Motion/Lighting 达到 Client-ready 颗粒度。2. \`visualDNA\` 输出 Midjourney 级英文摄影基底。3. 每镜 \`source_image_id\` 严格对应素材库。\n" +
@@ -1584,6 +1583,7 @@ ${dynamicPacingBlock}`;
 
       // ====== 🚀 分批流水线生成 (Batching) 开始 ======
       var currentShots = [];
+      var previousAssistantContent = "";
       var batchSize = 12; // 绝对安全区：每次最多逼 AI 吐 12 镜，防断流
       var batchCount = 0;
       var maxBatches = Math.ceil(targetNodes / batchSize) + 1; // 防死循环兜底
@@ -1622,6 +1622,15 @@ ${dynamicPacingBlock}`;
         // 每批次最多允许重试 2 次
         for (var attempt = 1; attempt <= 2; attempt++) {
           try {
+            var currentMessages = [
+              { role: "system", content: currentSystemPrompt },
+              { role: "user", content: userContent },
+            ];
+            // 核心记忆修复：带上上一批的 JSON 结果
+            if (batchCount > 1 && previousAssistantContent) {
+              currentMessages.splice(1, 0, { role: "assistant", content: previousAssistantContent });
+            }
+
             const res = await llmApiFetch("chat/completions", {
               label: styleCfg.name + " 分镜 (批次 " + batchCount + ")",
               apiKey: key,
@@ -1629,11 +1638,8 @@ ${dynamicPacingBlock}`;
               body: JSON.stringify({
                 model: window.getTextModel(),
                 max_tokens: 8192,
-                temperature: attempt === 1 ? 0.1 : 0.3,
-                messages: [
-                  { role: "system", content: currentSystemPrompt },
-                  { role: "user", content: userContent },
-                ],
+                temperature: attempt === 1 ? 0.7 : 0.85,
+                messages: currentMessages,
                 response_format: { type: "json_object" },
               }),
             });
@@ -1647,6 +1653,7 @@ ${dynamicPacingBlock}`;
                 data.choices[0].message.content) ||
                 ""
             );
+            previousAssistantContent = originalContent;
             if (!originalContent.trim()) throw new Error("批次响应为空");
             fullContentLogs.push(originalContent);
 
