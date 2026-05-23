@@ -950,7 +950,12 @@
 
       var styleC = isStyleCFastCut(styleOpts);
       var STYLE_C_SHOT_CAP_SEC = 2.5;
-      if (styleC) assertStyleCShotDurationLimit(shots, "校准前");
+
+      // 🛑 核心修正：注释或删掉校准前的 assertStyleCShotDurationLimit 断言！
+      // 允许 AI 原始输出秒数溢出，交由下方的弹性缩放和强行取整算法进行平滑重塑。
+      // if (styleC) assertStyleCShotDurationLimit(shots, "校准前");
+
+      var GRID_VISUAL_CAP_RE = /宫格|分屏|阵列/;
 
       if (styleC) {
         var styleCMaxTotal = roundDurD(shots.length * STYLE_C_SHOT_CAP_SEC);
@@ -971,8 +976,6 @@
           );
         }
       }
-
-      var GRID_VISUAL_CAP_RE = /宫格|分屏|阵列/;
 
       function shotMaxDurationCap(shot) {
         if (styleC) return 2.5;
@@ -1496,18 +1499,19 @@
       // ================= 核心重构：投放环境、画幅比例与全类目创意彻底解耦模型 =================
       var platformStr = String(p.platform || "通用平台");
       var ratioStr = String(p.ratio || "16:9");
-      var productLabelForStyle = String(p.product != null ? p.product : "未填写");
+      var productLabelForStyle = String(p.product != null ? p.product : "未填写说明");
       var categoryLabelForStyle = p.category && String(p.category).trim() ? String(p.category).trim() : "通用类目";
 
       var isShortVideoPool = /TikTok|Reels|Shorts|小红书|Instagram/i.test(platformStr);
       var isEcomListing = /Amazon|Listing|PDP|AliExpress|Temu|Shopify/i.test(platformStr);
 
+      // 1. 🛑 黄金三秒开场铁律（根据用户前期选择的平台硬性接管第一幕，彻底粉碎千篇一律）
       var platformHookRule = "";
       if (isShortVideoPool) {
         platformHookRule =
           "【开场铁律 · 短视频信息流钩子机制】：当前投放平台为【" +
           platformStr +
-          "】。用户划走率极高！第一镜（开场前3秒）必须使用【最强烈、最高能的产品局部动态、极限材质反光或高感知物理动作】作为黄金钩子，严禁任何长时间的环境空镜铺垫，第一秒必须锁定视线！";
+          "】。用户划走率极高！第一镜（开场前3秒）必须使用【最抓人、最高能的产品局部动态、极限材质反光或高感知物理动作】作为黄金钩子，严禁任何长时间的环境空镜铺垫，第一秒必须锁定视线！";
       } else if (isEcomListing) {
         platformHookRule =
           "【开场铁律 · 电商货架看货机制】：当前投放平台为【" +
@@ -1520,13 +1524,15 @@
           "】。第一镜允许使用高级的广角大景别（Establishing Shot）或充满电影感的光影氛围空镜引入，交代空间阶层与情绪调性，注重舒缓的电影感视听呼吸感。";
       }
 
+      // 2. 🛑 画幅构图约束（将用户选择的 Ratio 强力注入镜头描述，防止出图画幅拉伸崩塌）
       var aspectCompositionRule =
         "【画幅构图死命令】：当前画布大小为【" +
         ratioStr +
         "】。你在描述每一个镜头的 visual 画面陈设时，必须【完全对齐该画幅的视觉重心】：\n" +
-        "- 若为 9:16/4:5（竖屏），视觉元素必须纵向居中堆叠，运镜多使用 Pedestal（垂直升降）或纵向 Dolly In，注意上下留白空间；\n" +
-        "- 若为 16:9/21:9（横屏），视觉元素必须横向展开，充分运用对称构图、三分法则，运镜多使用 Truck（横向平移）或 Arc Orbit（圆弧绕拍），展现宏大的横向空间张力。";
+        "- 若为 9:16 / 4:5（竖屏），视觉元素必须纵向居中堆叠，运镜多使用 Pedestal（垂直升降）或纵向 Dolly In，注意上下留白空间；\n" +
+        "- 若为 16:9 / 21:9（横屏），视觉元素必须横向展开，充分运用对称构图、三分法则，运镜多使用 Truck（横向平移）或 Arc Orbit（圆弧绕拍），展现宏大的横向空间张力。";
 
+      // 3. 🛑 三套完全平等、皆可独立上线、全行业通用的 4A 级平行创意大纲
       var dynamicCreativeAngle =
         "【核心投放平台】：🚨 " +
         platformStr +
@@ -1546,9 +1552,9 @@
 
       if (styleCfg.id === "A" || styleIndex === 0) {
         dynamicCreativeAngle +=
-          "【平行提案一：匠心物理美学 (The Precision Craftsmanship - 经典奢华顶奢片)】\n" +
-          "👉 核心策略：这是一套完全独立、端庄、挑不出任何毛病的高端商业正片。切入视角为【极致纯粹的物理美学与精密解构】。全片聚焦于产品的材质肌理、机械咬合、光影折射与硬核功能事实，用绝对的画面纯净度自证身价、建立无坚不摧的品牌溢价与信任感。\n" +
-          "👉 视听执行：运镜沉稳有力（如受控的慢速推拉、精密拉焦）。描述中必须写明具体材质（如磨砂、拉丝、镜面）在工业打光下的物理反应。允许穿插人手的专家级克制操作，但焦点时刻锁死在产品高光上。最适合作为主线品牌形象片。";
+          "【平行提案一：匠心物理美学 (The Precision Craftsmanship - 经典奢华顶奢正片)】\n" +
+          "👉 核心策略：这是一套完全独立、端庄、挑不出任何毛病的高端商业正片。切入视角为【极致纯粹的物理美学与精密解构】。全片聚焦于产品的材质肌理、功能结构、光影折射与硬核事实，用绝对的画面纯净度自证身价、建立品牌溢价与信任感。\n" +
+          "👉 视听执行：运镜沉稳有力（如慢速推拉、精密拉焦）。描述中必须写明具体材质（如磨砂、拉丝、镜面）在工业打光（如 Scan Light 窄束动态扫描高光、Rim Light 轮廓光）下的物理反应。允许穿插人手的专家级克制操作，但焦点时刻锁死在产品高光上。";
       } else if (styleCfg.id === "B" || styleIndex === 1) {
         dynamicCreativeAngle +=
           "【平行提案二：人文呼吸场景 (The Warm Lifestyle - 共鸣感场景叙事片)】\n" +
@@ -1556,9 +1562,9 @@
           "👉 视听执行：打光主打高级的自然窗光、清晨逆光，画面带有奶油般的 cinematic bokeh（散景）。镜头精准捕捉人物的使用神态（如指尖拂过、抬手佩戴、释怀的一笑），让产品作为推动情节或情绪的核心道具自然出镜，用真实的生活体验征服客户。";
       } else {
         dynamicCreativeAngle +=
-          "【平行提案三：时尚感官视觉 (The High-Energy Dynamic - 高能视听冲击爆片)】\n" +
-          "👉 核心策略：这是一套完全独立、极具现代视听冲击力的时尚高能广告片。切入视角为【荷尔蒙爆发与极致感官爽感】。它通过高反差的光影异变、富有攻击性的运镜节奏和高密度的信息量，强行收割眼球、激发用户的购买冲动。\n" +
-          "👉 视听执行：全片单镜时长严格执行 0.5s - 2.5s 的快剪。运镜使用高能的手持、快速甩镜（Whip Pan）或匹配剪辑（Match Cut）。允许在高潮段落使用 4/9/16 宫格阵列多屏闪现。同样 100% 紧扣产品本体动作，但配合短促抽吸、磁吸嗒合等极致 ASMR 音效，将动感推向最高峰，最适合高饱和投流。";
+          "【平行提案三：时尚感官视觉 (The High-Energy Dynamic - 极速快剪震撼爆片)】\n" +
+          "👉 核心策略：这是一套完全独立、极具现代视听冲击力的时尚高能广告片。切入视角为【荷尔蒙爆发与极致感官爽感】。它彻底剥离平庸的慢吞吞铺垫，通过高反差的光影异变、富有攻击性的运镜调度和高密度的信息量，强行收割眼球、激发用户的购买冲动。\n" +
+          "👉 视听执行：全片单镜时长【必须死卡在 0.5s - 2.5s】！强制使用高能手持、快速甩镜（Whip Pan）或匹配剪辑（Match Cut）。允许在高潮段落使用 16 宫格或 25 宫格的多屏阵列闪现。同样 100% 紧扣产品本体动作，但配合短促抽吸、磁吸嗒合等极致 ASMR 音效，最适合流媒体高饱和投流。";
       }
 
       var dynamicPacingBlock =
@@ -1568,29 +1574,35 @@
         " - " +
         targetMax +
         "s】。\n" +
-        "系统已为你分配了【" +
+        "系统已根据平台调性和本套风格为你分配了【" +
         minNodes +
         " 到 " +
         maxNodes +
-        " 个镜头】的创作区间。请根据你的叙事节奏自由决定最终镜头数！\n" +
+        " 个镜头】的创作区间。请根据最佳叙事节奏决定最终镜头数！\n" +
         "请严格按照以下法则分配单镜时长，总时长必须落入区间：\n";
 
       if (isShortVideoPool || isStyleC) {
         dynamicPacingBlock +=
-          "👉 【高频快剪法则】：节奏必须极快、抓人！单镜时长严禁超过 2.5 秒，强制使用 0.5s-1.5s 的高频短切镜头（或多宫格阵列）填满总时长，绝不拖泥带水，拒绝提前收尾。\n";
+          "👉 【高频快剪法则】：节奏必须极快、抓人！单镜时长【绝对禁止超过 2.5 秒】！你必须通过疯狂推进故事密度（或使用4/9/16多宫格阵列镜头分屏）来填满 " +
+          targetMin +
+          "-" +
+          targetMax +
+          "s 的总长。严禁在早期镜头草草收尾！少于 " +
+          minNodes +
+          " 镜将被判定为严重生产事故！\n";
       } else {
         dynamicPacingBlock +=
           "👉 【经典大片法则】：严禁机械化平均分配！根据画面信息量，允许 0.8s 的细节闪现和 4-5s 的缓慢空间调度（如 Arc Orbit）并存，注重叙事呼吸感。\n";
       }
 
-      const systemPrompt = `你是一位斩获戛纳金狮奖、精通 4A 大厂全套提案心法的顶级 TVC 广告片导演。
+      const systemPrompt = `你是一位轴线逻辑无懈可击、精通 4A 大厂全套提案心法的顶级 TVC 广告片导演。
 你的唯一任务是：基于用户输入的行业、产品、卖点、平台和画幅，定制 3 套完全平行、质量对等、且皆可独立拿去直接上线的 Client-ready 分镜脚本。
 
 【导演最高铁律】
 1. 🛑 拒绝陪衬：3套提案必须是平等的“三选一”优秀方案，每一个风格都必须 100% 紧扣产品本体和用户输入的具体卖点，只是切入的视听视角不同！
-2. 🛑 拒绝雷同与偷懒：3套分镜的运镜轨迹、第一幕起手、故事场景、打光 Rig 必须彻底割裂，严禁相互抄袭或在 SHOT 8 盲目定格偷懒！
+2. 🛑 拒绝雷同与偷懒：3套分镜的运镜轨迹、第一幕起手、故事场景、打光 Rig 必须彻底割裂，严禁相互抄袭或在 SHOT 8 盲目写 Logo 定格敷衍！
 3. 🛑 纯正语言纪律：除 \`eng_prompt\` 必须是精炼的纯英文生图词外，其余所有字段（visual, motion, audio, lighting 等）必须【全部使用纯正、地道的专业中文】！绝对禁止中英混杂！
-4. 🛑 系统标记滤除：\`visual\` 正文内绝对不准包含 #、素材格 或任何系统内部编号文字，必须是纯粹、高可读性的画面描述。
+4. 🛑 System 标记滤除：\`visual\` 正文内绝对不准包含 #、素材格 或任何系统内部编号文字，必须是纯粹、高可读性的画面描述。
 
 ${dynamicCreativeAngle}
 ${dynamicPacingBlock}
@@ -1600,6 +1612,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
 
       var userTextBlock =
         "【投放平台】：" + (platformStr || "未指定") + "\n" +
+        "【画幅比例】：" + ratioStr + "\n" +
         "【总时长目标】：" + targetMin + "-" + targetMax + "s\n" +
         "【产品定位与核心卖点】：\n产品：" + productLabelForStyle + "\n简报：" + String(p.brief != null ? p.brief : "无") + "\n" +
         "【场景库】：" + usageScenariosForPrompt + "\n\n" +
@@ -1662,25 +1675,20 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
           batchBlueprintStr = "【单素材变奏】：仅1张图。请运用极度微距、光影切换或人物遮挡等手段制造画面差异。";
         }
 
-        // --- 2. 动态构建大厂商业片三幕剧锚点 ---
+        // --- 2. 动态构建大厂商业片三幕剧锚点（确保全部紧扣产品本体，从结构上彻底拉开雷同度） ---
         var narrativePhase = "";
         if (batchCount === 1) {
           if (styleCfg.id === "A" || styleIndex === 0) {
-            narrativePhase =
-              "【第一幕：匠心起幅】第一镜正面切入产品材质高光或核心结构 Macro，运镜舒缓大气；可穿插专家手势或赞许眼神，但焦点始终锁死产品物理之美。";
+            narrativePhase = "【第一幕：匠心起幅】第一镜正面切入产品材质高光或核心结构 Macro，运镜舒缓大气；可穿插专家手势或赞许眼神，但焦点始终锁死产品物理之美。";
           } else if (styleCfg.id === "B" || styleIndex === 1) {
-            narrativePhase =
-              "【第一幕：生活起幅】第一镜在高级真实场景中建立人物与产品的自然关系（指尖触碰、佩戴、使用），产品作为推动情绪的核心道具，温暖窗光或逆光。";
+            narrativePhase = "【第一幕：生活起幅】第一镜在高级真实场景中建立人物与产品的自然关系（指尖触碰、佩戴、使用），产品作为推动情绪的核心道具，温暖窗光或逆光。";
           } else {
-            narrativePhase =
-              "【第一幕：高能钩子】第一镜用产品极限特写、高反差光影异变或运动模糊强抓眼球，0.5–2.5s 短切节奏，产品始终是画面主体。";
+            narrativePhase = "【第一幕：高能钩子】第一镜用产品极限特写、高反差光影异变或运动模糊强抓眼球，0.5–2.5s 短切节奏，产品始终是画面主体。";
           }
         } else if (batchCount === 2) {
-          narrativePhase =
-            "【第二幕：冲突与本体】将前一幕的情感/奇观/微观，与产品的中景或核心功能交互进行强碰撞。开始穿插动作展示。";
+          narrativePhase = "【第二幕：冲突与本体】将前一幕的情感/奇观/微观，与产品的功能交互进行碰撞。开始穿插动作展示。";
         } else {
-          narrativePhase =
-            "【第三幕：高潮与定格】释放最高密度的视觉张力！用最极端的运镜展示产品的王者姿态，并以高光定格优雅收尾。";
+          narrativePhase = "【第三幕：高潮与定格】释放最高密度的视觉张力！用最极端的运镜展示产品的王者姿态，并以高光定格优雅收尾。";
         }
 
         var currentSystemPrompt = systemPrompt;
