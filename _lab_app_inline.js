@@ -1564,25 +1564,47 @@
       var isShortVideoPool = /TikTok|Reels|Shorts|小红书|Instagram/i.test(platformStr);
       var isEcomListing = /Amazon|Listing|PDP|AliExpress|Temu|Shopify/i.test(platformStr);
 
+      var isStyleA = styleCfg.id === "A" || styleIndex === 0;
+      var isStyleB = styleCfg.id === "B" || styleIndex === 1;
       var isStyleC = isStyleCFastCut(styleCfg);
+
+      var STYLE_A_DUR_MIN = 3.5;
+      var STYLE_A_DUR_MAX = 6.0;
+      var STYLE_B_DUR_MIN = 2.0;
+      var STYLE_B_DUR_MAX = 4.0;
+      var STYLE_C_DUR_MIN = 0.5;
+      var STYLE_C_DUR_MAX = 1.5;
+      var STYLE_C_SHOT_SEC = 1.0;
+
       var avgShotLen = 3.0;
       if (isStyleC) {
-        avgShotLen = isShortVideoPool ? 1.2 : 1.8;
-      } else if (styleCfg.id === "A") {
-        avgShotLen = isShortVideoPool ? 2.5 : 4.0;
+        avgShotLen = (STYLE_C_DUR_MIN + STYLE_C_DUR_MAX) / 2;
+      } else if (isStyleA) {
+        avgShotLen = (STYLE_A_DUR_MIN + STYLE_A_DUR_MAX) / 2;
       } else {
-        avgShotLen = isShortVideoPool ? 2.0 : 3.0;
+        avgShotLen = (STYLE_B_DUR_MIN + STYLE_B_DUR_MAX) / 2;
       }
 
-      var STYLE_C_SHOT_SEC = 2.5;
-      var dynamicTargetDur = targetMin + (targetMax - targetMin) * (isStyleC ? 0.9 : 0.6);
+      var dynamicTargetDur = targetMin + (targetMax - targetMin) * (isStyleC ? 0.9 : isStyleA ? 0.5 : 0.6);
       var targetNodes = Math.ceil(dynamicTargetDur / avgShotLen);
       var minNodes = Math.max(4, targetNodes - 2);
       var maxNodes = Math.min(20, targetNodes + 3);
       if (isStyleC) {
-        minNodes = Math.max(18, Math.ceil(targetMin / STYLE_C_SHOT_SEC));
-        targetNodes = Math.max(24, Math.ceil(targetMax / 1.8));
-        maxNodes = 35;
+        minNodes = Math.max(18, Math.ceil(targetMin / STYLE_C_DUR_MAX));
+        targetNodes = Math.max(24, Math.ceil(targetMax / avgShotLen));
+        maxNodes = Math.min(55, Math.ceil(targetMax / STYLE_C_DUR_MIN));
+      } else if (isStyleA) {
+        minNodes = Math.max(3, Math.ceil(targetMin / STYLE_A_DUR_MAX));
+        targetNodes = Math.max(3, Math.round(dynamicTargetDur / avgShotLen));
+        maxNodes = Math.min(12, Math.floor(targetMax / STYLE_A_DUR_MIN));
+        if (targetMax <= 20) {
+          targetNodes = Math.min(targetNodes, 4);
+          maxNodes = Math.min(maxNodes, 4);
+        }
+      } else if (isStyleB) {
+        minNodes = Math.max(4, Math.ceil(targetMin / STYLE_B_DUR_MAX));
+        targetNodes = Math.max(targetNodes, Math.ceil(dynamicTargetDur / avgShotLen));
+        maxNodes = Math.min(22, Math.floor(targetMax / STYLE_B_DUR_MIN));
       }
 
       setStoryEngineProgress(
@@ -1646,35 +1668,81 @@
         "3. [虚拟/软件]（如 App、游戏、SaaS）：强调 UI 界面空间化（悬浮玻璃拟态）、代码数据流、指尖交互特效。\n" +
         "4. [无形服务/平价物]（如保险、物流、日用百货）：将概念具象化（排版、几何图形隐喻安全/效率），或对平价物进行极其夸张的质感升格。\n\n";
 
+      var stylePhysicalIsolationBlock =
+        "【绝对物理隔离 · 本套 Style 视听防火墙】\n" +
+        "你当前仅允许执行本套 Style 的物理法则，与另外两套风格【零交叉、零借用】：\n" +
+        (isStyleA
+          ? "- 【隔离禁令】严禁 Whip Pan、Match Cut、快切、人物剧情线、生活场景叙事、ASMR 暴力砸击、0.5s–1.5s 碎镜；你的世界是「极慢 + 极微距 + 极静」。\n"
+          : isStyleB
+            ? "- 【隔离禁令】严禁 Style A 式全程微观悬念堆叠（禁止全片只有肌理无人物）；严禁 Style C 式 0.5s 碎镜轰炸、Whip Pan 残影、无剧情物理砸击；你的世界是「固定主角 + 动作延续 + 2–4s 呼吸镜」。\n"
+            : "- 【隔离禁令】严禁 Style A 式 3.5s+ 慢镜拉焦悬念、严禁 Style B 式舒缓人物起幅与长呼吸叙事；严禁把产品安安静静摆着拍；你的世界是「0.5–1.5s 暴力交互 + 极速残影」。\n");
+
       var adaptiveStyleRuleBlock = "";
-      if (styleCfg.id === "A" || styleIndex === 0) {
+      if (isStyleA) {
         adaptiveStyleRuleBlock =
           "【本套执行 · Style A (Precision - 极致空间与高冷悬念)】\n" +
+          stylePhysicalIsolationBlock +
           "【第一镜 · 正面强制动作】第一镜【必须且只能】描写局部的抽象光影或极度微观的材质纹理。严禁在文本中提及产品全名，【绝对禁止】分配或使用 `(参考素材格 #X)`。若第一镜出现产品实体全貌，视为严重事故！\n" +
           "核心精神：剥离环境、极致放大、冷峻科研感。\n" +
-          "  - 硬实体/软实体：第二镜起再逐级揭示；起幅仅用微观肌理（面料张力、芯片走线等）或抽象光影悬念。\n" +
-          "  - 虚拟/软件/无形服务：起幅用深色背景发光代码、缓慢旋转的 3D 抽象 Logo 材质或极简 Typography（同样禁止全貌界面说明书）。\n" +
-          "全篇运镜极其缓慢（Slow Dolly / Rack Focus），高对比 Rim Light / Scan Light，客观克制。\n";
-      } else if (styleCfg.id === "B" || styleIndex === 1) {
+          "【镜头节奏死命令】极静、极慢！每一镜 `duration` 必须在 " +
+          STYLE_A_DUR_MIN +
+          "–" +
+          STYLE_A_DUR_MAX +
+          " 秒之间。本套目标总长 " +
+          targetMin +
+          "–" +
+          targetMax +
+          "s，系统分配你【" +
+          minNodes +
+          "–" +
+          maxNodes +
+          " 镜（精准 " +
+          targetNodes +
+          " 镜）】；若总长仅约 15s，全篇最多 3–4 镜，严禁碎镜凑数！\n" +
+          "【悬念到底死命令】除全片【最后一镜】定格外，前中期所有镜头【绝对禁止】揭示产品全貌或整体轮廓！必须从头到尾用不同角度的极度微观肌理堆叠（边缘倒角、局部材质纤维、缓慢流动光斑等），每镜换一个微观视角。\n" +
+          "【视觉死命令】运镜【只能】是极慢推拉（Slow Dolly In）或拉焦（Rack Focus）；严禁 Whip Pan、快摇、快切、Match Cut 及任何快速运动。\n" +
+          "  - 硬实体/软实体：仅末镜允许 Hero 轮廓定格；此前只有微观肌理与抽象光影。\n" +
+          "  - 虚拟/软件/无形服务：起幅为发光代码/3D Logo 材质/极简 Typography 微观切片，禁止全貌 UI 说明书直至末镜。\n" +
+          "打光：高对比 Rim Light / Scan Light，客观克制。\n";
+      } else if (isStyleB) {
         adaptiveStyleRuleBlock =
           "【本套执行 · Style B (Human/Lifestyle - 微电影级连贯叙事)】\n" +
+          stylePhysicalIsolationBlock +
           "【第一镜 · 正面强制动作】第一镜【必须且只能】聚焦于主角出场或环境氛围建立（如主角的特写动作、场景的空间感）。禁止在第一镜硬塞产品展示。产品必须作为剧情道具在后续自然介入。\n" +
           "核心精神：人物情绪变化、固定场景、连续动作。\n" +
-          "通用适配规则：必须在 director_treatment 中设定 1 个符合产品受众画像的【固定主角】与 1 个【核心主场景】。\n" +
-          "  - 第二镜起再将产品/服务作为推动主角情绪变化的「道具」自然介入；禁止生硬切碎镜头。\n" +
-          "  - 实体/软实体：写出具体物理交互与高级生活痕迹；暖调窗光、逆光、Cinematic Bokeh。\n" +
-          "  - 虚拟/服务：聚焦使用 App/服务前后现实生活状态的改变；屏幕内容仅以过肩镜头或眼中倒影出现；前后镜头空间与时间绝对连贯。\n";
+          "【镜头节奏死命令】影视级叙事节奏，每一镜 `duration` 必须在 " +
+          STYLE_B_DUR_MIN +
+          "–" +
+          STYLE_B_DUR_MAX +
+          " 秒之间，配合主角表演呼吸感。本套须精准产出 " +
+          targetNodes +
+          " 镜（允许区间 " +
+          minNodes +
+          "–" +
+          maxNodes +
+          " 镜）。\n" +
+          "【动作连贯死命令】必须在 director_treatment 中写明 1 名【固定主角】+ 1 个【固定主场景】。前后镜头必须是同一套动作的顺滑延续（例：镜1主角伸手 → 镜2主观视角手握住产品），禁止生硬跳切 unrelated 画面。\n" +
+          "  - 第二镜起产品/服务作为推动情绪的「道具」介入；实体/软实体用具体物理交互与高级生活痕迹（暖调窗光、逆光、Cinematic Bokeh）。\n" +
+          "  - 虚拟/服务：屏幕内容仅以过肩或眼中倒影出现；空间与时间绝对连贯。\n";
       } else {
         adaptiveStyleRuleBlock =
           "【本套执行 · Style C (Sensory - 高爆感官刺激与快剪)】\n" +
+          stylePhysicalIsolationBlock +
           "【第一镜 · 正面强制动作】第一镜【必须且只能】是一次极度暴力的物理交互（如重物砸击、流体炸裂、极速残影）。禁止静止的产品全貌展示，必须以动态奇观破局。\n" +
-          "核心精神：高频次转场、物理/界面极限测试、ASMR 听觉轰炸。\n" +
-          "通用适配规则：本套须精准产出 " +
+          "核心精神：高频次转场、物理极限测试、ASMR 听觉轰炸。\n" +
+          "【镜头节奏死命令】极度狂暴！每一镜 `duration` 必须死卡在 " +
+          STYLE_C_DUR_MIN +
+          "–" +
+          STYLE_C_DUR_MAX +
+          " 秒（宫格/阵列分屏镜除外）。必须高密度视觉轰炸，本套须精准产出 " +
           targetNodes +
-          " 镜；单镜时长死卡 0.5s–2.5s（宫格/阵列镜除外）。\n" +
-          "  - 硬实体/软实体：狂暴物理交互（水花炸裂、火烧测试、高处坠落极速抓拍等）与运动模糊、Whip Pan、Match Cut。\n" +
-          "  - 虚拟/软件/无形服务：第一镜须为界面/数据层的动态奇观（操作残影、弹窗砸击、排版粉碎等），禁止静止全貌 UI；第二镜起可加速铺陈。\n" +
-          "音效死命令：每一镜 audio 须含与动作死死咬合的 ASMR 级音效（清脆键盘、玻璃碎裂、沉闷心跳重低音等）。高潮可闪现宫格阵列。\n";
+          " 镜（不少于 " +
+          minNodes +
+          " 镜，可至 " +
+          maxNodes +
+          " 镜）！\n" +
+          "【暴力奇观死命令】严禁把产品安安静静摆着拍。每一镜必须伴随剧烈物理交互（重物砸击、水花炸裂、高速坠落、粉末飞溅）或极速运镜残影（Whip Pan / Match Cut）；虚拟类用 UI 爆破、弹窗砸击、操作残影。\n" +
+          "【音效死命令】每一镜 `audio` 必须配合与动作死死咬合的重低音或极其清脆的 ASMR 物理破坏声（玻璃碎裂、沉闷撞击、尖锐撕裂等）。高潮可闪现宫格阵列。\n";
       }
 
       var priorityWeightDeclaration =
@@ -1682,48 +1750,71 @@
 
       var briefForPacing = String(p.brief != null ? p.brief : "无");
       var dynamicPacingBlock =
-        "【分镜管线 · 时长与节奏匹配法则】\n" +
+        "【分镜管线 · 时长与节奏匹配法则（与本套 Style 物理隔离绑定）】\n" +
         "当前目标总时长区间为【" +
         targetMin +
         " - " +
         targetMax +
-        "s】。\n" +
-        "系统已根据平台调性和本套风格为你分配了【" +
+        "s】。系统为本套 Style 分配【" +
         minNodes +
-        " 到 " +
+        "–" +
         maxNodes +
-        " 个镜头】的创作区间。你这套风格必须且只能精准产生具有高密度剧情的 " +
+        " 镜】，你【必须且只能】精准产出 " +
         targetNodes +
-        " 个镜头段落！\n" +
+        " 个镜头！各镜 `duration` 之和必须落入该总时长区间。\n" +
         "🛑 你必须死磕前端输入的【产品卖点】，将其作为每一镜推进的绝对核心：\n" +
         briefForPacing +
-        "\n" +
-        "请严格按照以下法则分配单镜时长，总时长必须落入区间：\n";
+        "\n";
 
-      if (isShortVideoPool || isStyleC) {
+      if (isStyleA) {
         dynamicPacingBlock +=
-          "👉 【高频快剪法则】：节奏必须极快、抓人！单镜时长【绝对禁止超过 2.5 秒】！你必须通过疯狂推进故事密度（或使用4/9/16多宫格阵列镜头分屏）来填满 " +
+          "👉 【Style A 极慢悬念管线】：全片仅 " +
+          targetNodes +
+          " 镜，每镜 " +
+          STYLE_A_DUR_MIN +
+          "–" +
+          STYLE_A_DUR_MAX +
+          "s，禁止 <" +
+          STYLE_A_DUR_MIN +
+          "s 的碎镜！前 " +
+          (targetNodes > 1 ? targetNodes - 1 : 0) +
+          " 镜全部为不同微观肌理/抽象光影，仅末镜允许 Hero 定格。即使投放平台为短视频，也【不得】加快节奏或增加镜数！\n";
+      } else if (isStyleB) {
+        dynamicPacingBlock +=
+          "👉 【Style B 微电影管线】：全片 " +
+          targetNodes +
+          " 镜，每镜 " +
+          STYLE_B_DUR_MIN +
+          "–" +
+          STYLE_B_DUR_MAX +
+          "s，以主角动作链串联；禁止 Style A 式全程微距悬念，禁止 Style C 式 sub-1.5s 碎剪。少于 " +
+          minNodes +
+          " 镜或动作断档视为生产事故！\n";
+      } else {
+        dynamicPacingBlock +=
+          "👉 【Style C 狂暴快剪管线】：全片 " +
+          targetNodes +
+          " 镜，每镜 " +
+          STYLE_C_DUR_MIN +
+          "–" +
+          STYLE_C_DUR_MAX +
+          "s（宫格镜除外）！必须通过暴力交互 + Whip Pan/Match Cut 填满 " +
           targetMin +
           "-" +
           targetMax +
-          "s 的总长。本套风格必须精准产出具有高密度剧情的 " +
-          targetNodes +
-          " 个镜头段落！严禁在早期镜头草草收尾！少于 " +
+          "s。少于 " +
           minNodes +
-          " 镜将被判定为严重生产事故！\n";
-      } else {
-        dynamicPacingBlock +=
-          "👉 【经典大片法则】：严禁机械化平均分配！根据画面信息量，允许 0.8s 的细节闪现和 4-5s 的缓慢空间调度（如 Arc Orbit）并存，注重叙事呼吸感。\n";
+          " 镜将被判定为严重生产事故！严禁早期草草收尾！\n";
       }
 
       const systemPrompt = `${priorityWeightDeclaration}你是一位轴线逻辑强悍、精通 4A 大厂全套提案心法的顶级 TVC 广告片导演。
 你的唯一任务是：基于用户输入的行业、产品、卖点、平台、画幅与定位，为本套风格定制一套可独立上线的 Client-ready 分镜脚本。你必须先完成「实体类别推断」，再严格执行下方本套 Style 的跨品类自适应规则。
 
 【导演最高铁律】
-1. 🛑 拒绝陪衬：本套提案必须 100% 紧扣产品本体与用户具体卖点，视听视角须与另外两套风格（若存在）彻底可区分。
-2. 🛑 拒绝雷同与偷懒：运镜轨迹、第一幕起手、故事场景、打光 Rig 须具备鲜明风格辨识度；严禁前几镜用 Logo 草草收尾。
+1. 🛑 绝对物理隔离：严格遵守本套 Style 的【镜头节奏死命令】与【绝对物理隔离】，禁止混入另外两套风格的运镜速度、单镜时长或叙事手法。
+2. 🛑 拒绝陪衬：本套提案必须 100% 紧扣产品本体与用户具体卖点，视听视角须与另外两套风格（若存在）彻底可区分。
 3. 🛑 纯正语言纪律：除 \`eng_prompt\` 必须是精炼的纯英文生图词（须随实体类别适配：实体侧重材质/光效，虚拟侧重 UI/空间化界面，服务侧重排版/符号隐喻）外，其余字段必须【全部使用纯正专业中文】！绝对禁止中英混杂！
-4. 🛑 第一镜纪律：第一镜【必须且只能】执行本套 Style 的【第一镜 · 正面强制动作】；平台常规逻辑仅从第二镜起叠加，每一镜须有具体运镜、光影、ASMR 声效编织！
+4. 🛑 第一镜纪律：第一镜【必须且只能】执行本套 Style 的【第一镜 · 正面强制动作】；平台常规逻辑仅从第二镜起叠加；每镜 \`duration\` 必须落在本套 Style 规定的秒数区间内！
 5. 🛑 System 标记滤除：\`visual\` 正文内绝对不准包含 #、素材格 或任何系统内部编号文字，必须是纯粹、高可读性的画面描述。
 
 ${adaptiveEntityMappingBlock}
@@ -1804,20 +1895,74 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         // --- 2. 动态构建大厂商业片三幕剧锚点（确保全部紧扣产品本体，从结构上彻底拉开雷同度） ---
         var narrativePhase = "";
         if (batchCount === 1) {
-          if (styleCfg.id === "A" || styleIndex === 0) {
+          if (isStyleA) {
             narrativePhase =
-              "【第一幕：高冷悬念起幅】第一镜【必须且只能】写局部抽象光影或极度微观材质纹理，运镜舒缓（Slow Dolly / Rack Focus），焦点锁死肌理与光影悬念；禁止产品全貌、禁止产品全名、禁止素材格编号。第二镜起再逐级揭示产品价值。";
-          } else if (styleCfg.id === "B" || styleIndex === 1) {
+              "【第一幕：高冷悬念起幅】本批镜头每镜 duration 必须 " +
+              STYLE_A_DUR_MIN +
+              "–" +
+              STYLE_A_DUR_MAX +
+              "s，仅 Slow Dolly In / Rack Focus。第一镜：局部抽象光影或极度微观材质；本批【全部】禁止产品全貌/整体轮廓/产品全名。若本批含末镜之前的铺垫，继续堆叠不同微观肌理（倒角、纤维、光斑）。";
+          } else if (isStyleB) {
             narrativePhase =
-              "【第一幕：微电影起幅】第一镜【必须且只能】建立主角出场或环境氛围（主角特写动作、场景空间感），温暖窗光或逆光；禁止在第一镜硬塞产品展示。第二镜起再将产品/服务作为剧情道具自然介入。";
+              "【第一幕：微电影起幅】本批每镜 duration 必须 " +
+              STYLE_B_DUR_MIN +
+              "–" +
+              STYLE_B_DUR_MAX +
+              "s。第一镜：固定主角出场或环境氛围；禁止第一镜硬塞产品。本批内镜头须写成同一动作链的顺滑延续（伸手→握持→使用），产品从第二镜起作剧情道具介入。";
           } else {
             narrativePhase =
-              "【第一幕：感官奇观起幅】第一镜【必须且只能】呈现极度暴力的物理/界面动态交互（重物砸击、流体炸裂、极速残影或 UI 爆破），在 1 秒内以动态奇观破局；禁止静止产品全貌说明书。第二镜起再铺陈卖点与 Hero 张力。";
+              "【第一幕：感官奇观起幅】本批每镜 duration 必须 " +
+              STYLE_C_DUR_MIN +
+              "–" +
+              STYLE_C_DUR_MAX +
+              "s。第一镜：极度暴力物理/界面交互破局；本批每一镜须有砸击/炸裂/残影/Whip Pan，禁止静态摆拍产品。";
           }
         } else if (batchCount === 2) {
-          narrativePhase = "【第二幕：功能展现】将前一幕引入的产品核心卖点或演示互动深入铺开，向前推进动作厚度。";
+          if (isStyleA) {
+            narrativePhase =
+              "【第二幕：微观悬念加深】本批继续 Style A 物理隔离：每镜 " +
+              STYLE_A_DUR_MIN +
+              "–" +
+              STYLE_A_DUR_MAX +
+              "s，仅慢推/拉焦；仍【禁止】产品全貌，换用全新微观肌理视角堆叠卖点暗示。";
+          } else if (isStyleB) {
+            narrativePhase =
+              "【第二幕：剧情与功能交织】在同一固定主角与同一场景内，将卖点融入连续动作链（握持→体验→情绪反应），每镜 " +
+              STYLE_B_DUR_MIN +
+              "–" +
+              STYLE_B_DUR_MAX +
+              "s，禁止跳切 unrelated 场景。";
+          } else {
+            narrativePhase =
+              "【第二幕：暴力奇观铺陈】每镜 " +
+              STYLE_C_DUR_MIN +
+              "–" +
+              STYLE_C_DUR_MAX +
+              "s，以物理/UI 极限测试与 Match Cut 铺陈卖点，audio 须咬合 ASMR 破坏声。";
+          }
         } else {
-          narrativePhase = "【第三幕：高潮与定格】释放最高密度的视觉张力，品牌 Hero Shot 核心全貌定格优雅完美收尾。";
+          if (isStyleA) {
+            narrativePhase =
+              "【第三幕：末镜 Hero 定格】本批若含全片最后一镜，【仅此一镜】允许产品全貌/核心 Hero 定格；此前各镜仍禁止整体轮廓。其余镜维持 " +
+              STYLE_A_DUR_MIN +
+              "–" +
+              STYLE_A_DUR_MAX +
+              "s 极慢微观或拉焦。";
+          } else if (isStyleB) {
+            narrativePhase =
+              "【第三幕：情绪高潮与品牌落幅】在固定场景内完成情绪释放与 Hero 定格，每镜 " +
+              STYLE_B_DUR_MIN +
+              "–" +
+              STYLE_B_DUR_MAX +
+              "s，动作链须与前一镜顺滑衔接。";
+          } else {
+            narrativePhase =
+              "【第三幕：感官总爆】每镜 " +
+              STYLE_C_DUR_MIN +
+              "–" +
+              STYLE_C_DUR_MAX +
+              "s，最高密度 Whip Pan/砸击/宫格阵列，重低音+清脆 ASMR 合一，Hero 可在暴力交互中定格。";
+          }
         }
 
         var currentSystemPrompt = systemPrompt;
@@ -1958,7 +2103,11 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         );
       }
 
-      var acceptableMin = Math.max(4, Math.floor(targetNodes * 0.5));
+      var acceptableMin = isStyleA
+        ? Math.max(3, Math.floor(targetNodes * 0.6))
+        : isStyleC
+          ? Math.max(minNodes, Math.floor(targetNodes * 0.5))
+          : Math.max(4, Math.floor(targetNodes * 0.5));
       if (styleObj.shots.length < acceptableMin) {
         console.warn("AI 镜头数偏少，已放行：期望 " + targetNodes + " 镜，实际 " + styleObj.shots.length + " 镜。");
       }
