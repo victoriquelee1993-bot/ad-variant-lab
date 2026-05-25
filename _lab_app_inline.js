@@ -1832,6 +1832,11 @@
       var priorityWeightDeclaration =
         "【指令权重申明 · 最高执行判定】以下关于三大风格（Style A/B/C）的【第一镜/开场动作】设定，具有超越任何「平台常规展现逻辑」的最高优先级！无论用户选择什么投放平台，绝对禁止使用「直接展示产品全貌」这种庸俗的开场来覆盖风格自身的艺术设定。\n\n";
 
+      var globalCoreRulesBlock =
+        "【全局核心规则】\n" +
+        "【片尾多SKU/变色法则】：如果视觉素材分析报告中指出该产品存在多种颜色或形态变体，【严禁】在前期主线剧情中强行塞入不同颜色以免破坏叙事节奏。前期剧情请保持使用主打色。\n" +
+        "你【必须且只能】在每一个风格的【最后一个镜头（定格/落幅）】或倒数第二个镜头，设计一个「极速多色切换 (Color Transition / Match Cut)」或「全色系同框阵列展示」的专属视觉桥段，以此来收尾。必须确保片尾涵盖了素材中出现的所有颜色。\n\n";
+
       var briefForPacing = String(p.brief != null ? p.brief : "无");
       var dynamicPacingBlock =
         "【分镜管线 · 时长与节奏匹配法则（与本套 Style 物理隔离绑定）】\n" +
@@ -1896,13 +1901,14 @@
       const systemPrompt = `${priorityWeightDeclaration}你是一位轴线逻辑强悍、精通 4A 大厂全套提案心法的顶级 TVC 广告片导演。
 你的唯一任务是：基于用户输入的行业、产品、卖点、平台、画幅与定位，为本套风格定制一套可独立上线的 Client-ready 分镜脚本。你必须先完成「实体类别推断」，再严格执行下方本套 Style 的跨品类自适应规则。
 
-【导演最高铁律】
+${globalCoreRulesBlock}【导演最高铁律】
 1. 🛑 绝对物理隔离：严格遵守本套 Style 的【镜头节奏死命令】与【绝对物理隔离】，禁止混入另外两套风格的运镜速度、单镜时长或叙事手法。
 2. 🛑 反产品说明书${isStyleA || isStyleC ? "（Style A/C 死刑线）" : ""}：${isStyleA || isStyleC ? "全片≥40% 镜头必须是「非产品本体」的隐喻空镜或感官碎片；禁止纯产品堆砌摆拍！" : "本套须避免机械说明书式摆拍，卖点须通过具体视听动作呈现。"}
 3. 🛑 拒绝陪衬：本套提案必须 100% 紧扣产品本体与用户具体卖点，视听视角须与另外两套风格（若存在）彻底可区分。
 4. 🛑 纯正语言纪律：除 \`eng_prompt\` 必须是精炼的纯英文生图词（须随实体类别适配：实体侧重材质/光效，虚拟侧重 UI/空间化界面，服务侧重排版/符号隐喻）外，其余字段必须【全部使用纯正专业中文】！绝对禁止中英混杂！
 5. 🛑 第一镜纪律：第一镜【必须且只能】执行本套 Style 的【第一镜 · 正面强制动作】；平台常规逻辑仅从第二镜起叠加；每镜 \`duration\` 必须落在本套 Style 规定的秒数区间内！
 6. 🛑 System 标记滤除：\`visual\` 正文内绝对不准包含 #、素材格 或任何系统内部编号文字，必须是纯粹、高可读性的画面描述。
+7. 🛑 片尾多SKU/变色：若素材存在多色/多形态变体，主线仅保持主打色；多色展示【只能】落在末镜或倒数第二镜，以 Color Transition / Match Cut 或全色系同框阵列收尾，须涵盖素材全部颜色。
 
 ${adaptiveEntityMappingBlock}
 ${adaptiveStyleRuleBlock}
@@ -3152,27 +3158,63 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
     );
   }
 
+  function collapseSpacesForDraw(s) {
+    return String(s || "")
+      .replace(/\s{2,}/g, " ")
+      .replace(/\s+([，。、；：])/g, "$1")
+      .trim();
+  }
+
+  /** 仅剥离系统标记与剪辑术语；供 UI 展示时勿调用（面板须保留原汁原味剧本） */
+  function stripVideoEditTermsForDraw(originalVisualText) {
+    var cleanPrompt = String(originalVisualText || "").replace(/\((?:参考|动态)素材格[^)]+\)/g, "");
+    cleanPrompt = cleanPrompt.replace(/[0-9.]+[s秒]极速快剪|[0-9.]+[s秒]/g, "");
+    cleanPrompt = cleanPrompt.replace(/快剪|匹配剪辑|转场|运镜残影|极速甩镜|Whip Pan|Match Cut/gi, "");
+    return collapseSpacesForDraw(cleanPrompt);
+  }
+
+  function isStyleCForDraw(style, sIdx) {
+    var styleName = style && style.styleName ? String(style.styleName) : "";
+    return /style\s*c\b/i.test(styleName) || (typeof sIdx === "number" && sIdx === 2);
+  }
+
+  /** 生图专用：在 strip 基础上追加高速摄影定格语义（DALL·E / MJ / Nano Banner 等底层 Prompt） */
+  function sanitizeVisualForImageGen(originalVisualText, style, sIdx) {
+    var cleanPrompt = stripVideoEditTermsForDraw(originalVisualText);
+    if (isStyleCForDraw(style, sIdx) || /炸裂|飞溅|狂暴|极速/.test(cleanPrompt)) {
+      cleanPrompt +=
+        "，高速摄影瞬间定格 (High-speed photography frozen motion), 画面极其清晰锐利, 无运动模糊";
+    }
+    return cleanPrompt.trim();
+  }
+
+  /**
+   * 构建送往生图引擎的 Prompt（与分镜 UI 展示严格分离）。
+   * 分镜面板上须直接展示 shot.visual 原文；仅本函数返回值可传入 DALL·E / MJ / Nano Banner。
+   */
   function buildVisualDrawPrompt(shot, style, productName, sIdx, mode) {
     if (!mode) mode = "dalle";
     var exactProductDescription = style && style.visualDNA ? style.visualDNA : productName;
-    var cleanVisual = String(shot.visual || "").replace(/\((?:参考|动态)素材格[^)]+\)/g, "").trim();
-    var engPrompt = shot.eng_prompt != null && String(shot.eng_prompt).trim() ? String(shot.eng_prompt).trim() : "";
+    var engPrompt =
+      shot.eng_prompt != null && String(shot.eng_prompt).trim() ? String(shot.eng_prompt).trim() : "";
+    var sceneCore = engPrompt
+      ? sanitizeVisualForImageGen(engPrompt, style, sIdx)
+      : sanitizeVisualForImageGen(shot.visual || "", style, sIdx);
     var mood = getStyleMoodSuffix(style, sIdx);
-    var sceneCore = engPrompt || cleanVisual;
+    var motionHint = stripVideoEditTermsForDraw(shot.motion || "");
+    var lighting =
+      shot.lighting != null && String(shot.lighting).trim() ? String(shot.lighting).trim() : "";
 
-    // DALL·E 轨道：纯英文商业摄影栈，禁止混入 MJ/Nano 专用词与中文 visual 污染
     if (mode === "dalle") {
       var categoryEl = document.getElementById("category-input");
       var category = categoryEl ? String(categoryEl.value || "").trim() : "";
       var materialLine = resolveMaterialConstraintLine(productName, category);
-      var lighting = shot.lighting != null && String(shot.lighting).trim() ? String(shot.lighting).trim() : "";
-      var motionHint = shot.motion != null && String(shot.motion).trim() ? String(shot.motion).trim() : "";
       var dalleParts = [
         "Hyper-realistic commercial product photography, 8K, shot on ARRI Alexa 65, Zeiss Master Prime optics",
         sceneCore,
         "Product details: " + exactProductDescription,
         lighting ? "Lighting rig: " + lighting : "",
-        motionHint ? "Camera motion: " + motionHint : "",
+        motionHint && !isStyleCForDraw(style, sIdx) ? "Camera motion: " + motionHint : "",
         materialLine,
         mood,
       ];
@@ -3183,7 +3225,6 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         .join(", ");
     }
 
-    // Midjourney：电影摄影流（动态视频素材格禁止携带视频 URL / --sref / --cref）
     if (mode === "mj") {
       var mjCore = sceneCore;
       if (shotUsesDynamicVideoAsset(shot)) {
@@ -3201,14 +3242,19 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
       }
       return mjLine;
     }
-    // Nano Banner：电商强转化流
+    // Nano Banner：电商强转化流（sceneCore 已为静态化洗稿结果）
     return [
       "Commercial e-commerce banner",
       sceneCore,
       "Product details: " + exactProductDescription,
       "clean background with negative space for text",
       "sharp focus, professional studio shot",
-    ].join(", ");
+      mood,
+    ]
+      .filter(function (p) {
+        return p && String(p).trim();
+      })
+      .join(", ");
   }
 
   function labSleep(ms) {
@@ -3522,7 +3568,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
             return triggerVisualShotRender(renderCtx);
           });
 
-          // 5. 文本区：自动滤除视觉冗余标记
+          // 5. 文本区：展示原汁原味剧本（洗稿仅发生在 buildVisualDrawPrompt → 生图 API）
           var content = document.createElement("div");
           content.style.cssText = "padding: 14px; flex: 1; display: flex; flex-direction: column;";
 
@@ -3533,8 +3579,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
 
           var vis = document.createElement("div");
           vis.style.cssText = "font-size: 0.85rem; line-height: 1.5; color: var(--text); flex: 1;";
-          // 💡 精益求精：去掉文本中丑陋的“(参考素材格 #X)”标记，因为上方卡片已渲染直观配图
-          vis.textContent = String(shot.visual || "").replace(/\((?:参考|动态)素材格[^)]+\)/g, "").trim();
+          vis.textContent = String(shot.visual || "").trim();
           content.appendChild(vis);
 
           var meta = document.createElement("div");
