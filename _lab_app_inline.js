@@ -1,5 +1,6 @@
 /**
- * Ad Variant Lab - Director's Creative Engine (V2.3 - 终极无卡死闭环版)
+ * Ad Variant Lab - Director's Creative Engine (V3.0 - 终极4A大厂上线级闭环版)
+ * 100% 严密对齐平台、画布画幅、产品、卖点、定位五维变量。
  * 完全对齐 .cursorrules.js 工业标准：
  * 1. 矢量化运动 (Vectorized Motion)
  * 2. 智能光影系统 (Lighting Rig)
@@ -8,6 +9,9 @@
  * 5. 绝对数据绑定 (Atomic Data Binding)
  *
  * 说明：卖点简报 LLM（directorVisionTransformLLM、renderBriefFromParsed）在 index.html 的内联脚本中，不在本文件。
+ *
+ * TODO: 若未来接入 html2canvas 导出分镜板，需在此处理 <video> 标签截帧，防止导出黑屏。
+ *       可调用 prepareVideosForDomCapture(root) / restoreVideosAfterDomCapture(state)。
  */
 (function () {
   // 1. 强制协议检测：防止 file:// 协议导致的 CORS 跨域拦截
@@ -94,6 +98,127 @@
       };
       img.src = blobUrl;
     });
+  }
+
+  function isProductVideoFile(file) {
+    if (!file) return false;
+    if (file.type && /^video\//i.test(file.type)) return true;
+    return /\.(mp4|mov|webm)$/i.test(file.name || "");
+  }
+
+  var SHOT_GRID_REF_RE = /\((?:参考|动态)素材格\s*#(\d+)\)/;
+  var SHOT_DYNAMIC_GRID_RE = /\(\s*动态素材格\s*#\d+\s*\)/;
+
+  /** 读取宫格 DOM 元数据：data-visual-class、data-visual-features、data-asset-type */
+  function getGalleryCellMeta(idx0) {
+    var items = document.querySelectorAll("#product-gallery .gallery-item");
+    var el = items[idx0];
+    if (!el) return null;
+    var cls = (el.getAttribute("data-visual-class") || "").trim().toLowerCase();
+    var feats = (el.getAttribute("data-visual-features") || el.getAttribute("data-visual-notes") || "").trim();
+    var assetType = (el.getAttribute("data-asset-type") || "").trim().toLowerCase();
+    if (!assetType && el.querySelector("video")) assetType = "video";
+    return { className: cls, features: feats, type: assetType || "image" };
+  }
+
+  function parseShotGridRefFromVisual(visual) {
+    var m = String(visual || "").match(SHOT_GRID_REF_RE);
+    if (!m) return null;
+    var index = parseInt(m[1], 10);
+    if (isNaN(index) || index < 1) return null;
+    return {
+      index: index,
+      isDynamic: SHOT_DYNAMIC_GRID_RE.test(String(visual || "")),
+    };
+  }
+
+  function resolveShotGallerySlotIndex(shot) {
+    if (!shot) return null;
+    var fromVisual = parseShotGridRefFromVisual(shot.visual);
+    if (fromVisual) return fromVisual.index;
+    var sid = parseInt(shot.source_image_id, 10);
+    if (!isNaN(sid) && sid >= 1) return sid;
+    return null;
+  }
+
+  /** 当前镜头是否绑定动态视频素材格（禁止向 MJ 等静态生图生态传递视频 URL） */
+  function shotUsesDynamicVideoAsset(shot) {
+    if (!shot) return false;
+    if (SHOT_DYNAMIC_GRID_RE.test(String(shot.visual || ""))) return true;
+    var slot = resolveShotGallerySlotIndex(shot);
+    if (slot == null) return false;
+    var meta = getGalleryCellMeta(slot - 1);
+    return !!(meta && meta.type === "video");
+  }
+
+  /** 剥离 MJ 提示词中的视频垫图 URL 与 --sref / --cref 参数 */
+  function sanitizeMjPromptForVideoAsset(text) {
+    var s = String(text || "");
+    s = s.replace(/\b--sref(?:-\w+)?\s+\S+/gi, "");
+    s = s.replace(/\b--cref(?:-\w+)?\s+\S+/gi, "");
+    s = s.replace(/\b--sv\s+\S+/gi, "");
+    s = s.replace(/\b--iw\s+\S+/gi, "");
+    s = s.replace(/https?:\/\/\S+/gi, "");
+    s = s.replace(/\bblob:\S+/gi, "");
+    s = s.replace(/\S+\.(?:mp4|mov|webm|m4v)(?:\?\S*)?/gi, "");
+    s = s.replace(/\s{2,}/g, " ").replace(/,\s*,/g, ",").trim();
+    return s;
+  }
+
+  /**
+   * html2canvas / DOM 截图前：将 <video> 当前帧替换为临时 <img>，避免导出黑屏。
+   * @returns {Array} 还原句柄，传给 restoreVideosAfterDomCapture
+   */
+  function prepareVideosForDomCapture(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var videos = scope.querySelectorAll ? scope.querySelectorAll("video") : [];
+    var replacements = [];
+    var vi;
+    for (vi = 0; vi < videos.length; vi++) {
+      var video = videos[vi];
+      try {
+        var vw = video.videoWidth;
+        var vh = video.videoHeight;
+        if (!vw || !vh) continue;
+        var canvas = document.createElement("canvas");
+        canvas.width = vw;
+        canvas.height = vh;
+        var ctx = canvas.getContext("2d");
+        if (!ctx) continue;
+        ctx.drawImage(video, 0, 0, vw, vh);
+        var dataUrl = canvas.toDataURL("image/png");
+        var placeholder = document.createElement("img");
+        placeholder.src = dataUrl;
+        placeholder.className = "lab-video-capture-placeholder";
+        placeholder.setAttribute("data-lab-video-capture", "1");
+        placeholder.style.cssText =
+          video.style.cssText ||
+          "width:100%;height:100%;object-fit:cover;display:block;";
+        var parent = video.parentNode;
+        if (!parent) continue;
+        var prevDisplay = video.style.display;
+        parent.insertBefore(placeholder, video);
+        video.style.display = "none";
+        replacements.push({ video: video, placeholder: placeholder, prevDisplay: prevDisplay });
+      } catch (capErr) {
+        console.warn("[Lab] video frame capture failed:", capErr);
+      }
+    }
+    return replacements;
+  }
+
+  function restoreVideosAfterDomCapture(replacements) {
+    if (!Array.isArray(replacements)) return;
+    var ri;
+    for (ri = 0; ri < replacements.length; ri++) {
+      var r = replacements[ri];
+      if (r.placeholder && r.placeholder.parentNode) {
+        r.placeholder.parentNode.removeChild(r.placeholder);
+      }
+      if (r.video) {
+        r.video.style.display = r.prevDisplay != null ? r.prevDisplay : "";
+      }
+    }
   }
 
   /* ========== 网络层（不修改分镜导演逻辑） ==========
@@ -369,20 +494,36 @@
         );
       }
 
+      const imageSlotsInBatch = [];
+
+      for (let j = 0; j < batchFiles.length; j++) {
+        const file = batchFiles[j];
+        const globalIdx = i + j;
+        if (isProductVideoFile(file)) {
+          combinedImages[globalIdx] = { class: "INTERACTIVE", features: "动态视频素材" };
+          continue;
+        }
+        imageSlotsInBatch.push({ j: j, globalIdx: globalIdx, file: file });
+      }
+
+      if (imageSlotsInBatch.length === 0) {
+        continue;
+      }
+
       const content = [
         {
           type: "text",
           text:
             '你是一位顶级商业广告摄影指导。请仔细观察这些产品图片（本批共 ' +
-            batchFiles.length +
+            imageSlotsInBatch.length +
             ' 张，请按顺序逐张输出 images 数组，长度必须等于 ' +
-            batchFiles.length +
+            imageSlotsInBatch.length +
             '）。1. 识别品牌/型号或具体物理特征（不限品类）。2. 为每张图标注通用景别标签 class（仅限四选一：ESTABLISHING / HERO_SHOT / DETAIL_MACRO / INTERACTIVE）。3. 在 features 中写材质、反光、景别与可见细节（可含 matte/磨砂 等英文材质词）。返回JSON：{"master_prompt": "用于DALL-E的顶级英文产品外观描述", "images": [{"class": "HERO_SHOT", "features": "高度具体的物理特征与景别描述"}]}',
         },
       ];
 
-      for (let j = 0; j < batchFiles.length; j++) {
-        const b64 = await fileToCompressedBase64(batchFiles[j]);
+      for (let k = 0; k < imageSlotsInBatch.length; k++) {
+        const b64 = await fileToCompressedBase64(imageSlotsInBatch[k].file);
         content.push({ type: "image_url", image_url: { url: b64, detail: "low" } });
       }
 
@@ -410,9 +551,9 @@
         const batchImages =
           parsed.images && Array.isArray(parsed.images) ? parsed.images : [];
 
-        for (let j = 0; j < batchFiles.length; j++) {
-          const globalIdx = i + j;
-          const entry = batchImages[j];
+        for (let k = 0; k < imageSlotsInBatch.length; k++) {
+          const globalIdx = imageSlotsInBatch[k].globalIdx;
+          const entry = batchImages[k];
           if (entry && (entry.class != null || entry.features != null)) {
             combinedImages[globalIdx] = {
               class: entry.class != null ? String(entry.class) : "HERO_SHOT",
@@ -425,8 +566,8 @@
         }
       } catch (e) {
         console.warn(`第 ${Math.floor(i / BATCH_SIZE) + 1} 批次视觉解析失败`, e);
-        for (let j = 0; j < batchFiles.length; j++) {
-          const globalIdx = i + j;
+        for (let k = 0; k < imageSlotsInBatch.length; k++) {
+          const globalIdx = imageSlotsInBatch[k].globalIdx;
           combinedImages[globalIdx] = {
             class: "HERO_SHOT",
             features: "批次解析失败（索引 #" + (globalIdx + 1) + "）",
@@ -490,6 +631,11 @@
         duration: document.getElementById("durLabel").innerText,
         product: document.getElementById("product-input").value,
         category: document.getElementById("category-input").value,
+        positioning: (function () {
+          var posEl = document.getElementById("positioning-select") || document.getElementById("positioning-input");
+          var posVal = posEl ? String(posEl.value || "").trim() : "";
+          return posVal || "高端/轻奢/大众消费";
+        })(),
         brief: briefContent,
         mods: storyModsEl ? String(storyModsEl.value || "") : "",
         materialCount: getMaterialGridCount(),
@@ -700,6 +846,7 @@
     const files = typeof window.__getStoryboardImageFiles === "function" ? window.__getStoryboardImageFiles() : [];
     const base64Images = [];
     for (let i = 0; i < Math.min(files.length, 6); i++) {
+      if (isProductVideoFile(files[i])) continue;
       base64Images.push(await fileToCompressedBase64(files[i]));
     }
     if (base64Images.length > 0) {
@@ -782,69 +929,11 @@
       { id: "C", name: "Style C (感官刺激与钩子 / Hook-Driven)" },
     ];
 
-    /** 读取宫格 DOM 元数据（可选）：data-visual-class、data-visual-features */
-    function getGalleryCellMeta(idx0) {
-      var items = document.querySelectorAll("#product-gallery .gallery-item");
-      var el = items[idx0];
-      if (!el) return null;
-      var cls = (el.getAttribute("data-visual-class") || "").trim().toLowerCase();
-      var feats = (el.getAttribute("data-visual-features") || el.getAttribute("data-visual-notes") || "").trim();
-      return { className: cls, features: feats };
-    }
+    /** 读取宫格 DOM 元数据（可选）：data-visual-class、data-visual-features — 见模块级 getGalleryCellMeta */
 
-    var GRID_REF_RE = /\(参考素材格\s*#(\d+)\)/;
+    var GRID_REF_RE = /\((?:参考|动态)素材格\s*#(\d+)\)/;
 
-    /**
-     * 分类负面词：若 data-visual-class 语义命中某类，则 visual 禁止出现对应空间/外型语汇
-     * class 支持 internal/movement/component、detail/macro 等组合写法
-     */
-    var CATEGORY_NEGATIVE_KEYWORDS = [
-      {
-        id: "internal_movement_component",
-        classTest: function (clsRaw) {
-          return /internal|movement|component|机芯|零件|内部|底盖|背面|case_back|mvt|calibre/i.test(clsRaw);
-        },
-        forbidRe: /外壳|外包装|包装箱|完整外观|全身外观|Logo|标识牌|礼盒|开箱|外盒|表盒/i,
-        label: "外壳/包装/完整外观/Logo 等外型语汇",
-      },
-      {
-        id: "detail_macro",
-        classTest: function (clsRaw) {
-          return /detail|macro|微距|细节|特写/i.test(clsRaw);
-        },
-        forbidRe: /全景|大环境|远景|大场景|广角建立|城市天际|街道全景|窗外楼群/i,
-        label: "全景/环境/远景等大空间语汇",
-      },
-    ];
-
-    /**
-     * 核心功能词：若 features 未闭环，由 applyStoryboardVisualRewrites 弱化措辞而非中断。
-     */
-    var CORE_FUNCTION_TERM_RULES = [
-      { visualRe: /拉丝|拔丝|芝士丝|奶酪丝/i, featuresRe: /拉丝|拔丝|丝状|纤维/i, label: "拉丝/拔丝类食物质感" },
-      { visualRe: /(?:Type-C|USB-C|USB接口|雷电接口|充电口|数据口|接口|端子|插孔)/i, featuresRe: /接口|USB|Type-C|充电|端子|插孔|孔位/i, label: "接口/孔位类" },
-      { visualRe: /质地|膏体|乳液|雾面|哑光|水润|成膜|显色/i, featuresRe: /质地|膏体|乳液|雾面|哑光|水润|成膜|显色/i, label: "质地/妆效" },
-      { visualRe: /起泡|泡沫|碳酸|气泡/i, featuresRe: /起泡|泡沫|碳酸|气泡/i, label: "起泡/碳酸类" },
-      { visualRe: /续航|毫安|mAh|快充|无线充电/i, featuresRe: /续航|电池|毫安|mAh|快充|无线充/i, label: "续航/充电参数类" },
-    ];
-
-    var DIAL_FACE_TERMS_RE =
-      /表盘|刻度|指针|6点位|六点|时标|子表盘|字面|字钉|时针|分针|十二点位|12点位|刻度圈|表镜|表玻璃|太阳纹盘|盘面珠光|盘面/i;
-    var MOVEMENT_CLUSTER_RE = /机芯|夹板|擒纵|摆轮|游丝|发条|传动齿|齿轮组|红宝石轴眼|红宝石轴承|背透|陀飞轮框架/i;
-
-    function isMovementGridForDialBan(cls) {
-      var c = String(cls || "").trim().toLowerCase();
-      if (!c) return false;
-      if (c === "movement") return true;
-      return /^(case_back|caseback|mvt|calibre|back|底盖|背盖|背面|机芯)/i.test(c) || c.indexOf("机芯") !== -1 || c.indexOf("背") !== -1;
-    }
-
-    var SUBSECOND_VISUAL_RE = /小秒|小秒针|小秒盘|子秒盘|子表盘|偏心秒|六点位小秒|六点位秒/i;
-    var SUBSECOND_FEATURES_RE = /小秒|子秒|子表盘|秒盘|偏心秒|六点位秒/i;
-
-    var GRID_REF_REPLACE_G = /\(参考素材格\s*#(\d+)\)/g;
-    /** 贵重材质脑补词：仅当 [uspSummary] 原文含该词时才允许保留 */
-    var GEMSTONE_HALLUCINATION_RE = /红宝石|蓝宝石|鸽血红|祖母绿|帕拉伊巴|沙弗莱|红刚玉|蓝刚玉/gi;
+    var GRID_REF_REPLACE_G = /\((?:参考|动态)素材格\s*#\d+\)/g;
 
     function roundDurD(x) {
       var n = parseFloat(x);
@@ -859,19 +948,11 @@
         .trim();
     }
 
-    function stripGemstonesNotInBrief(text, brief) {
-      var b = String(brief || "").toLowerCase();
-      return String(text || "").replace(GEMSTONE_HALLUCINATION_RE, function (m) {
-        if (b.indexOf(String(m).toLowerCase()) !== -1) return m;
-        return "";
-      });
-    }
-
     function stripSystemTokensFromVisual(vis) {
       var s = String(vis || "");
       s = s.replace(GRID_REF_REPLACE_G, "");
-      s = s.replace(/\(参考素材格\s*：\s*无\)/g, "");
-      s = s.replace(/参考素材格|素材格/g, "");
+      s = s.replace(/\((?:参考|动态)素材格\s*：\s*无\)/g, "");
+      s = s.replace(/(?:参考|动态)素材格|素材格/g, "");
       s = s.replace(/#\d+\s*表面/g, "");
       s = s.replace(/#\d+\s*号格?/g, "");
       return collapseSpaces(s);
@@ -978,9 +1059,11 @@
       }
 
       function shotMaxDurationCap(shot) {
-        if (styleC) return 2.5;
         var vis = String(shot && shot.visual != null ? shot.visual : "");
+        // 宫格/分屏/阵列镜头统一允许较长秒数（Style C 也必须豁免，吸收总时长）
         if (GRID_VISUAL_CAP_RE.test(vis)) return hi * 0.5;
+        // 普通快剪镜头死卡 2.5s
+        if (styleC) return 2.5;
         return 8;
       }
 
@@ -1075,7 +1158,7 @@
               var lastCap = Math.floor(shotMaxDurationCap(shots[lastIdx]));
               if (curLastD >= lastCap) {
                 if (styleC) {
-                  console.warn("Style C 补短极限保护启动，防止断言卡死。");
+                  console.warn("Style C 补短红线硬性放行保护。");
                 }
                 break;
               }
@@ -1227,15 +1310,14 @@
     }
 
     /**
-     * 与 data-visual-class / features 冲突时：就地改写 visual（及 audio 贵重词），不中断生成。
-     * 通用景别纠偏：universalAssetCorrection 处理「特写文案配全景图」类指鹿为马；行业词库规则作补充。
+     * 与 data-visual-class / features 冲突时：就地改写 visual，不中断生成。
+     * 通用景别纠偏：universalAssetCorrection 处理「特写文案配全景图」类指鹿为马。
      * 支持解耦结构：优先用 source_image_id 绑定宫格，visual 可为无 # 的纯中文。
      */
     function applyStoryboardVisualRewrites(styleObj, p) {
       var shots = styleObj.shots;
       if (!Array.isArray(shots)) return;
       var galleryCount = document.querySelectorAll("#product-gallery .gallery-item").length;
-      var brief = String((p && p.brief) || "");
 
       for (var i = 0; i < shots.length; i++) {
         if (!shots[i]) continue;
@@ -1243,7 +1325,7 @@
         vis = vis.replace(GRID_REF_REPLACE_G, function () {
           return "";
         });
-        vis = vis.replace(/参考素材格[^)]*\)/g, "");
+        vis = vis.replace(/(?:参考|动态)素材格[^)]*\)/g, "");
         vis = collapseSpaces(vis);
 
         var k = parseInt(shots[i].source_image_id, 10);
@@ -1252,51 +1334,35 @@
         if (!galleryCount) k = 1;
 
         var meta = galleryCount > 0 ? getGalleryCellMeta(k - 1) : null;
-        var clsRaw = meta ? meta.className : "";
-        var feats = meta ? String(meta.features || "") : "";
 
         if (meta) universalAssetCorrection(shots[i], meta);
 
-        var nb, bucket, cr, rule;
-        for (nb = 0; nb < CATEGORY_NEGATIVE_KEYWORDS.length; nb++) {
-          bucket = CATEGORY_NEGATIVE_KEYWORDS[nb];
-          if (clsRaw && bucket.classTest(clsRaw)) vis = vis.replace(bucket.forbidRe, "");
-        }
+        // 同步提取更新后的视觉文本，防止上一步的修改被覆盖
+        vis = String(shots[i].visual || "");
 
-        if (meta && isMovementGridForDialBan(clsRaw)) vis = vis.replace(DIAL_FACE_TERMS_RE, "");
-
-        if (SUBSECOND_VISUAL_RE.test(vis) && (!feats || !SUBSECOND_FEATURES_RE.test(feats))) {
-          vis = vis.replace(SUBSECOND_VISUAL_RE, "秒针区域局部");
-        }
-
-        for (cr = 0; cr < CORE_FUNCTION_TERM_RULES.length; cr++) {
-          rule = CORE_FUNCTION_TERM_RULES[cr];
-          if (rule.visualRe.test(vis) && (!feats || !rule.featuresRe.test(feats))) {
-            vis = vis.replace(rule.visualRe, "图中可见结构");
-          }
-        }
-
-        if (MOVEMENT_CLUSTER_RE.test(vis) && DIAL_FACE_TERMS_RE.test(vis)) vis = vis.replace(DIAL_FACE_TERMS_RE, "");
-
-        vis = stripGemstonesNotInBrief(vis, brief);
+        // 只做空格清理
         vis = collapseSpaces(vis);
 
-        if (!/\(参考素材格/.test(vis)) {
+        var tagPrefix = meta && meta.type === "video" ? "动态素材格" : "参考素材格";
+
+        if (!new RegExp("\\(" + tagPrefix).test(vis)) {
           vis =
             (vis ? vis + " " : "") +
-            (galleryCount ? "(参考素材格 #" + k + ")" : "(参考素材格：无)");
+            (galleryCount ? "(" + tagPrefix + " #" + k + ")" : "(" + tagPrefix + "：无)");
         }
 
-        if (vis.replace(GRID_REF_RE, "").trim().length < 8) {
+        if (vis.replace(GRID_REF_REPLACE_G, "").trim().length < 8) {
           vis =
-            "镜头沿画面主体轮廓与表面反光做受控微距推进，保持客观质感。(参考素材格 #" +
+            "镜头平稳聚焦当前核心画面要素，呈现极致高级的视觉张力。(" +
+            tagPrefix +
+            " #" +
             k +
             ")";
         }
 
         shots[i].visual = vis;
         if (shots[i].audio != null) {
-          shots[i].audio = collapseSpaces(stripGemstonesNotInBrief(String(shots[i].audio || ""), brief));
+          shots[i].audio = collapseSpaces(String(shots[i].audio || ""));
         }
       }
     }
@@ -1320,7 +1386,9 @@
       var shots = styleObj.shots;
       if (!Array.isArray(shots) || shots.length < 3) return;
       var gc = document.querySelectorAll("#product-gallery .gallery-item").length;
-      if (gc < 2) return;
+      // 如果上传的参考图小于等于 3 张，直接放行，不强制打断连续引用
+      if (gc <= 3) return;
+
       for (var i = 2; i < shots.length; i++) {
         var ma = String(shots[i - 2].visual || "").match(GRID_REF_RE);
         var mb = String(shots[i - 1].visual || "").match(GRID_REF_RE);
@@ -1332,7 +1400,9 @@
         if (ka !== kb || kb !== kc) continue;
         var alt = (kc % gc) + 1;
         if (alt === kc) alt = (alt % gc) + 1;
-        shots[i].visual = String(shots[i].visual || "").replace(GRID_REF_RE, "(参考素材格 #" + alt + ")");
+        shots[i].visual = String(shots[i].visual || "").replace(GRID_REF_RE, function (match, p1) {
+          return match.replace("#" + p1, "#" + alt);
+        });
       }
     }
 
@@ -1479,16 +1549,29 @@
         targetMax = swp;
       }
 
+      // ================= 🎯 核心重构：前端五维参数咬合模型（平台/画幅/类目/产品/定位） =================
       var platformStr = String(p.platform || "通用平台");
-      var isShortVideo = /TikTok|Reels|Shorts|小红书|Instagram/.test(platformStr);
+      var ratioStr = String(p.ratio || "16:9");
+      var productLabelForStyle = String(p.product != null ? p.product : "未填写说明");
+      var categoryLabelForStyle = p.category && String(p.category).trim() ? String(p.category).trim() : "通用类目";
+      var positionElForInput = document.getElementById("positioning-select") || document.getElementById("positioning-input");
+      var positioningStr =
+        p.positioning && String(p.positioning).trim()
+          ? String(p.positioning).trim()
+          : positionElForInput && String(positionElForInput.value || "").trim()
+            ? String(positionElForInput.value).trim()
+            : "高端/轻奢/大众消费";
+      var isShortVideoPool = /TikTok|Reels|Shorts|小红书|Instagram/i.test(platformStr);
+      var isEcomListing = /Amazon|Listing|PDP|AliExpress|Temu|Shopify/i.test(platformStr);
+
       var isStyleC = isStyleCFastCut(styleCfg);
       var avgShotLen = 3.0;
       if (isStyleC) {
-        avgShotLen = isShortVideo ? 1.2 : 1.8;
+        avgShotLen = isShortVideoPool ? 1.2 : 1.8;
       } else if (styleCfg.id === "A") {
-        avgShotLen = isShortVideo ? 2.5 : 4.0;
+        avgShotLen = isShortVideoPool ? 2.5 : 4.0;
       } else {
-        avgShotLen = isShortVideo ? 2.0 : 3.0;
+        avgShotLen = isShortVideoPool ? 2.0 : 3.0;
       }
 
       var STYLE_C_SHOT_SEC = 2.5;
@@ -1507,77 +1590,92 @@
         8 + (typeof styleIndex === "number" ? styleIndex : 0) * 28
       );
 
-      // ================= 核心重构：投放环境、画幅比例与全类目创意彻底解耦模型 =================
-      var platformStr = String(p.platform || "通用平台");
-      var ratioStr = String(p.ratio || "16:9");
-      var productLabelForStyle = String(p.product != null ? p.product : "未填写说明");
-      var categoryLabelForStyle = p.category && String(p.category).trim() ? String(p.category).trim() : "通用类目";
-
-      var isShortVideoPool = /TikTok|Reels|Shorts|小红书|Instagram/i.test(platformStr);
-      var isEcomListing = /Amazon|Listing|PDP|AliExpress|Temu|Shopify/i.test(platformStr);
-
       // 1. 🛑 黄金三秒开场铁律（根据用户前期选择的平台硬性接管第一幕，彻底粉碎千篇一律）
       var platformHookRule = "";
       if (isShortVideoPool) {
         platformHookRule =
-          "【开场铁律 · 短视频信息流钩子机制】：当前投放平台为【" +
+          "【开场铁律 · 短视频流流媒体钩子机制】：当前投放平台为【" +
           platformStr +
-          "】。用户划走率极高！第一镜（开场前3秒）必须使用【最抓人、最高能的产品局部动态、极限材质反光或高感知物理动作】作为黄金钩子，严禁任何长时间的环境空镜铺垫，第一秒必须锁定视线！";
+          "】。第一镜必须使用【极具视觉侵略性的特写动态、强效ASMR交互、材质流光（实体）或 UI/数据高能变幻（虚拟）】作为黄金钩子，前3秒必须强制吸睛！";
       } else if (isEcomListing) {
         platformHookRule =
           "【开场铁律 · 电商货架看货机制】：当前投放平台为【" +
           platformStr +
-          "】。消费者买东西的核心心理是看货！第一镜【必须直接、清晰地展示产品全貌主体或核心功能触发点】，绝对禁止任何形式的抽象意象或无产品前摇，直接呈现确定性卖点！";
+          "】。消费者的核心心理是看货或看服务效果！第一镜必须【清晰正面展示产品主体全貌或核心功能界面 Hero Shot】，剥离一切空洞的意识流前摇！";
       } else {
         platformHookRule =
-          "【开场铁律 · 横屏TVC/大银幕叙事空间】：当前投放平台为【" +
+          "【开场铁律 · 横屏TVC/大银幕叙事】：当前投放平台为【" +
           platformStr +
-          "】。第一镜允许使用高级的广角大景别（Establishing Shot）或充满电影感的光影氛围空镜引入，交代空间阶层与情绪调性，注重舒缓的电影感视听呼吸感。";
+          "】。第一镜允许使用高级广角大景别或情绪氛围空镜引入，交代空间阶层与电影感质感，注重舒缓的视听呼吸感。";
       }
 
       // 2. 🛑 画幅构图约束（将用户选择的 Ratio 强力注入镜头描述，防止出图画幅拉伸崩塌）
       var aspectCompositionRule =
-        "【画幅构图死命令】：当前画布大小为【" +
+        "【画布大小构图死命令】：当前画布大小为【" +
         ratioStr +
-        "】。你在描述每一个镜头的 visual 画面陈设时，必须【完全对齐该画幅的视觉重心】：\n" +
-        "- 若为 9:16 / 4:5（竖屏），视觉元素必须纵向居中堆叠，运镜多使用 Pedestal（垂直升降）或纵向 Dolly In，注意上下留白空间；\n" +
-        "- 若为 16:9 / 21:9（横屏），视觉元素必须横向展开，充分运用对称构图、三分法则，运镜多使用 Truck（横向平移）或 Arc Orbit（圆弧绕拍），展现宏大的横向空间张力。";
+        "】。你在描述视觉元素陈设时，必须完全对齐该画布的物理重心：\n" +
+        "- 若为 9:16 / 4:5（竖屏），视觉元素必须纵向居中堆叠分布，多用 Pedestal（垂直升降）运镜，注意画面上下留白；\n" +
+        "- 若为 16:9 / 21:9（横屏），多用 Truck（横向平移）或 Arc Orbit（圆弧绕拍），全面展开横向的空间张力。";
 
       // 3. 🛑 三套完全平等、皆可独立上线、全行业通用的 4A 级平行创意大纲
       var dynamicCreativeAngle =
         "【核心投放平台】：🚨 " +
         platformStr +
         " 🚨\n" +
-        "【当前画幅构图】：📐 " +
+        "【当前画布大小】：📐 " +
         ratioStr +
         " 📐\n" +
+        "【产品定位约束】：💎 当前产品定位为【" +
+        positioningStr +
+        "】。你必须让全片的场景奢华度、画面色调、演员调性、灯光高级感完全匹配该定位！如果是高奢，用无菌克制的高级打光与冷色调；如果是大众消费，注重亲和力与高饱满色彩。\n" +
         "【行业类目约束】：📦 本片服务于【" +
         categoryLabelForStyle +
         "】行业的【" +
         productLabelForStyle +
-        "】。你必须提取该行业的独有材质特征（美妆重质地/次表面散射；3C重精密拉丝/金属 PBR 反应；食品重 ASMR 润泽感）。\n\n" +
+        "】。须结合下方「实体类别推断」结果提取本品类视觉隐喻，严禁生搬其它行业套路。\n\n" +
         platformHookRule +
         "\n" +
         aspectCompositionRule +
         "\n\n";
 
+      var adaptiveEntityMappingBlock =
+        "【前置死命令：跨品类自适应转换器 · Adaptive Entity Mapping】\n" +
+        "在生成分镜前，你必须首先根据用户输入的产品名、类目、简报与卖点，判断其属于以下哪一类实体，并严格按照该类别的视觉隐喻执行本套风格（写入 director_treatment 首句须明示类别）：\n" +
+        "1. [硬实体]（如 3C 数码、家电、汽车）：强调工业材质、精密结构、物理反馈。\n" +
+        "2. [软实体/日化]（如美妆、食品、服饰）：强调流体/粉末质感、肌肤触感、色彩张力。\n" +
+        "3. [虚拟/软件]（如 App、游戏、SaaS）：强调 UI 界面空间化（悬浮玻璃拟态）、代码数据流、指尖交互特效。\n" +
+        "4. [无形服务/平价物]（如保险、物流、日用百货）：将概念具象化（排版、几何图形隐喻安全/效率），或对平价物进行极其夸张的质感升格。\n\n";
+
+      var adaptiveStyleRuleBlock = "";
       if (styleCfg.id === "A" || styleIndex === 0) {
-        dynamicCreativeAngle +=
-          "【平行提案一：匠心物理美学 (The Precision Craftsmanship - 经典奢华顶奢正片)】\n" +
-          "👉 核心策略：这是一套完全独立、端庄、挑不出任何毛病的高端商业正片。切入视角为【极致纯粹的物理美学与精密解构】。全片聚焦于产品的材质肌理、功能结构、光影折射与硬核事实，用绝对的画面纯净度自证身价、建立品牌溢价与信任感。\n" +
-          "👉 视听执行：运镜沉稳有力（如慢速推拉、精密拉焦）。描述中必须写明具体材质（如磨砂、拉丝、镜面）在工业打光（如 Scan Light 窄束动态扫描高光、Rim Light 轮廓光）下的物理反应。允许穿插人手的专家级克制操作，但焦点时刻锁死在产品高光上。";
+        adaptiveStyleRuleBlock =
+          "【本套执行 · Style A (Precision - 极致空间与高冷悬念)】\n" +
+          "核心精神：剥离环境、极致放大、冷峻科研感。\n" +
+          "通用适配规则：第一镜【绝对禁止暴露产品全貌】！\n" +
+          "  - 若为硬实体/软实体：用极度微观的材质肌理（如水滴在防水面料上的张力、芯片微观走线）或抽象光影作悬念。\n" +
+          "  - 若为虚拟/软件/无形服务：用深色背景下的一行发光代码、缓慢旋转的 3D 抽象 Logo 材质、或极简高级 Typography 作悬念起幅。\n" +
+          "全篇运镜极其缓慢（Slow Dolly / Rack Focus），高对比 Rim Light / Scan Light，客观克制。\n";
       } else if (styleCfg.id === "B" || styleIndex === 1) {
-        dynamicCreativeAngle +=
-          "【平行提案二：人文呼吸场景 (The Warm Lifestyle - 共鸣感场景叙事片)】\n" +
-          "👉 核心策略：这是一套完全独立、充满温度和呼吸感的生活流叙事广告片。切入视角为【人与产品的温情共生】。它弱化冷冰冰的器械感，通过真实、高级、有阶层感的使用场景（必须紧密围绕产品卖点展开），展现产品带给用户的陪伴、情绪升华与体验价值。\n" +
-          "👉 视听执行：打光主打高级的自然窗光、清晨逆光，画面带有奶油般的 cinematic bokeh（散景）。镜头精准捕捉人物的使用神态（如指尖拂过、抬手佩戴、释怀的一笑），让产品作为推动情节或情绪的核心道具自然出镜，用真实的生活体验征服客户。";
+        adaptiveStyleRuleBlock =
+          "【本套执行 · Style B (Human/Lifestyle - 微电影级连贯叙事)】\n" +
+          "核心精神：人物情绪变化、固定场景、连续动作。\n" +
+          "通用适配规则：必须在 director_treatment 中设定 1 个符合产品受众画像的【固定主角】与 1 个【核心主场景】。\n" +
+          "  - 禁止生硬切碎镜头；产品/服务必须是推动主角情绪变化的「道具」。\n" +
+          "  - 实体/软实体：写出具体物理交互与高级生活痕迹；暖调窗光、逆光、Cinematic Bokeh。\n" +
+          "  - 虚拟/服务：聚焦使用 App/服务前后现实生活状态的改变；屏幕内容仅以过肩镜头或眼中倒影出现；前后镜头空间与时间绝对连贯。\n";
       } else {
-        dynamicCreativeAngle +=
-          "【平行提案三：时尚感官视觉 (The High-Energy Dynamic - 极速快剪震撼爆片)】\n" +
-          "👉 核心策略：这是一套完全独立、极具现代视听冲击力的时尚高能广告片。切入视角为【荷尔蒙爆发与极致感官爽感】。它彻底剥离平庸的慢吞吞铺垫，通过高反差的光影异变、富有攻击性的运镜调度和高密度的信息量，强行收割眼球、激发用户的购买冲动。\n" +
-          "👉 视听执行：全片单镜时长【必须死卡在 0.5s - 2.5s】！强制使用高能手持、快速甩镜（Whip Pan）或匹配剪辑（Match Cut）。允许在高潮段落使用 16 宫格或 25 宫格的多屏阵列闪现。同样 100% 紧扣产品本体动作，但配合短促抽吸、磁吸嗒合等极致 ASMR 音效，最适合流媒体高饱和投流。";
+        adaptiveStyleRuleBlock =
+          "【本套执行 · Style C (Sensory - 高爆感官刺激与快剪)】\n" +
+          "核心精神：高频次转场、物理/界面极限测试、ASMR 听觉轰炸。\n" +
+          "通用适配规则：禁止平庸的快速展示！本套须精准产出 " +
+          targetNodes +
+          " 镜；单镜时长死卡 0.5s–2.5s（宫格/阵列镜除外）。\n" +
+          "  - 硬实体/软实体：狂暴物理交互（水花炸裂、火烧测试、高处坠落极速抓拍等）与运动模糊、Whip Pan、Match Cut。\n" +
+          "  - 虚拟/软件/无形服务：极速 UI 操作残影（Swiping blur）、通知弹窗瀑布般砸下的压迫感、痛点词汇暴力排版粉碎。\n" +
+          "音效死命令：每一镜 audio 须含与动作死死咬合的 ASMR 级音效（清脆键盘、玻璃碎裂、沉闷心跳重低音等）。高潮可闪现宫格阵列。\n";
       }
 
+      var briefForPacing = String(p.brief != null ? p.brief : "无");
       var dynamicPacingBlock =
         "【分镜管线 · 时长与节奏匹配法则】\n" +
         "当前目标总时长区间为【" +
@@ -1589,7 +1687,12 @@
         minNodes +
         " 到 " +
         maxNodes +
-        " 个镜头】的创作区间。请根据最佳叙事节奏决定最终镜头数！\n" +
+        " 个镜头】的创作区间。你这套风格必须且只能精准产生具有高密度剧情的 " +
+        targetNodes +
+        " 个镜头段落！\n" +
+        "🛑 你必须死磕前端输入的【产品卖点】，将其作为每一镜推进的绝对核心：\n" +
+        briefForPacing +
+        "\n" +
         "请严格按照以下法则分配单镜时长，总时长必须落入区间：\n";
 
       if (isShortVideoPool || isStyleC) {
@@ -1608,15 +1711,18 @@
           "👉 【经典大片法则】：严禁机械化平均分配！根据画面信息量，允许 0.8s 的细节闪现和 4-5s 的缓慢空间调度（如 Arc Orbit）并存，注重叙事呼吸感。\n";
       }
 
-      const systemPrompt = `你是一位轴线逻辑无懈可击、精通 4A 大厂全套提案心法的顶级 TVC 广告片导演。
-你的唯一任务是：基于用户输入的行业、产品、卖点、平台和画幅，定制 3 套完全平行、质量对等、且皆可独立拿去直接上线的 Client-ready 分镜脚本。
+      const systemPrompt = `你是一位轴线逻辑强悍、精通 4A 大厂全套提案心法的顶级 TVC 广告片导演。
+你的唯一任务是：基于用户输入的行业、产品、卖点、平台、画幅与定位，为本套风格定制一套可独立上线的 Client-ready 分镜脚本。你必须先完成「实体类别推断」，再严格执行下方本套 Style 的跨品类自适应规则。
 
 【导演最高铁律】
-1. 🛑 拒绝陪衬：3套提案必须是平等的“三选一”优秀方案，每一个风格都必须 100% 紧扣产品本体和用户输入的具体卖点，只是切入的视听视角不同！
-2. 🛑 拒绝雷同与偷懒：3套分镜的运镜轨迹、第一幕起手、故事场景、打光 Rig 必须彻底割裂，严禁相互抄袭或在 SHOT 8 盲目写 Logo 定格敷衍！
-3. 🛑 纯正语言纪律：除 \`eng_prompt\` 必须是精炼的纯英文生图词外，其余所有字段（visual, motion, audio, lighting 等）必须【全部使用纯正、地道的专业中文】！绝对禁止中英混杂！
-4. 🛑 System 标记滤除：\`visual\` 正文内绝对不准包含 #、素材格 或任何系统内部编号文字，必须是纯粹、高可读性的画面描述。
+1. 🛑 拒绝陪衬：本套提案必须 100% 紧扣产品本体与用户具体卖点，视听视角须与另外两套风格（若存在）彻底可区分。
+2. 🛑 拒绝雷同与偷懒：运镜轨迹、第一幕起手、故事场景、打光 Rig 须具备鲜明风格辨识度；严禁前几镜用 Logo 草草收尾。
+3. 🛑 纯正语言纪律：除 \`eng_prompt\` 必须是精炼的纯英文生图词（须随实体类别适配：实体侧重材质/光效，虚拟侧重 UI/空间化界面，服务侧重排版/符号隐喻）外，其余字段必须【全部使用纯正专业中文】！绝对禁止中英混杂！
+4. 🛑 严禁垃圾说明书：禁止机械全貌展示（Style A 第一镜尤其禁止）！每一镜须有具体运镜、光影、ASMR 声效编织！
+5. 🛑 System 标记滤除：\`visual\` 正文内绝对不准包含 #、素材格 或任何系统内部编号文字，必须是纯粹、高可读性的画面描述。
 
+${adaptiveEntityMappingBlock}
+${adaptiveStyleRuleBlock}
 ${dynamicCreativeAngle}
 ${dynamicPacingBlock}
 
@@ -1626,6 +1732,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
       var userTextBlock =
         "【投放平台】：" + (platformStr || "未指定") + "\n" +
         "【画幅比例】：" + ratioStr + "\n" +
+        "【产品定位】：" + positioningStr + "\n" +
         "【总时长目标】：" + targetMin + "-" + targetMax + "s\n" +
         "【产品定位与核心卖点】：\n产品：" + productLabelForStyle + "\n简报：" + String(p.brief != null ? p.brief : "无") + "\n" +
         "【场景库】：" + usageScenariosForPrompt + "\n\n" +
@@ -1693,16 +1800,17 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         var narrativePhase = "";
         if (batchCount === 1) {
           if (styleCfg.id === "A" || styleIndex === 0) {
-            narrativePhase = "【第一幕：匠心起幅】第一镜正面切入产品材质高光或核心结构 Macro，运镜舒缓大气；可穿插专家手势或赞许眼神，但焦点始终锁死产品物理之美。";
+            narrativePhase = "【第一幕：内核起幅】第一镜直接切入产品核心（实体为材质结构/工艺，虚拟为核心UI/逻辑流），运镜舒缓大气，焦点锁死其底层价值之美。";
           } else if (styleCfg.id === "B" || styleIndex === 1) {
-            narrativePhase = "【第一幕：生活起幅】第一镜在高级真实场景中建立人物与产品的自然关系（指尖触碰、佩戴、使用），产品作为推动情绪的核心道具，温暖窗光或逆光。";
+            narrativePhase = "【第一幕：生活起幅】第一镜在高级真实场景中建立人物与产品/服务的自然关系（实体为触碰/穿戴/使用，虚拟为痛点场景下的痛点解决或操作反馈），温暖窗光或逆光。";
           } else {
-            narrativePhase = "【第一幕：高能钩子】第一镜用产品极限特写、高反差光影异变或运动模糊强抓眼球，0.5–2.5s 短切节奏，产品始终是画面主体。";
+            narrativePhase =
+              "【第一幕：感官高能钩子】第一镜【绝对禁止拍大远景说明书】！必须由【极具生理刺激的触发动作】（实体为物理ASMR，虚拟为高能特效/UI爆破）或【人脸局部极速甩镜】作为黄金钩子，在 1 秒内爆破屏幕。";
           }
         } else if (batchCount === 2) {
-          narrativePhase = "【第二幕：冲突与本体】将前一幕的情感/奇观/微观，与产品的功能交互进行碰撞。开始穿插动作展示。";
+          narrativePhase = "【第二幕：功能展现】将前一幕引入的产品核心卖点或演示互动深入铺开，向前推进动作厚度。";
         } else {
-          narrativePhase = "【第三幕：高潮与定格】释放最高密度的视觉张力！用最极端的运镜展示产品的王者姿态，并以高光定格优雅收尾。";
+          narrativePhase = "【第三幕：高潮与定格】释放最高密度的视觉张力，品牌 Hero Shot 核心全貌定格优雅完美收尾。";
         }
 
         var currentSystemPrompt = systemPrompt;
@@ -1859,10 +1967,10 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         if (styleObj.director_treatment == null || !String(styleObj.director_treatment).trim()) {
           styleObj.director_treatment =
             styleCfg.id === "A"
-              ? "【导演阐述·兜底】人+极简专业场景+产品同框；人物动机=专家式克制操作与验证；视觉核心=人手与产品接触点的极致微距物理细节与冷光质感。"
+              ? "【导演阐述·内核解码】以克制、客观的专业镜头语言解构核心价值。视觉重心在于剥离冗余环境，用微距/特写、严谨的光影（如 Scan/Rim Light）及缓慢推进的运镜，最大化呈现其物理工艺或逻辑深度。"
               : styleCfg.id === "B"
-                ? "【导演阐述·兜底】人+真实生活场景+产品；动机=烟火气/社交中的自然动作链；视觉核心=窗光情绪与人-物交融（场景锚点须可对应 [usage_scenarios]）。"
-                : "【导演阐述·兜底】人+动感/反差场景+产品；动机=人物动作触发误读与 Match Cut 揭示；视觉核心=极速运镜、运动模糊与 ASMR 节奏。";
+                ? "【导演阐述·人文共振】将产品/服务无缝融入高级且真实的生活流。视觉重心在于捕捉人物的情绪蜕变与自然互动，通过暖调窗光与散景，营造极强的代入感与共鸣感。"
+                : "【导演阐述·感官风暴】旨在通过高频视听刺激掠夺注意力。视觉重心在于极速快剪、Match Cut 转场、运动模糊与高爆 ASMR 节奏，通过强烈的动静反差与视觉奇观刻画品牌张力。";
         }
         var galleryCountPad = document.querySelectorAll("#product-gallery .gallery-item").length;
         var decoupled = shotsAppearDecoupled(styleObj.shots);
@@ -1979,7 +2087,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
       document.head.appendChild(st);
     }
 
-    const REF_RE = /参考素材格\s*#(\d+)/;
+    const REF_RE = /(?:参考|动态)素材格\s*#(\d+)/;
     document.querySelectorAll(".tl-visual").forEach(function (el) {
       const text = el.innerText || "";
       const match = text.match(REF_RE);
@@ -1998,8 +2106,8 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
 
         var items = document.querySelectorAll("#product-gallery .gallery-item");
         var cell = items[idx];
-        var targetImg = cell ? cell.querySelector("img") : null;
-        if (!targetImg) return;
+        var targetMedia = cell ? cell.querySelector("img, video") : null;
+        if (!targetMedia) return;
 
         var vClass = (cell.getAttribute("data-visual-class") || "").trim();
         var vFeat = (cell.getAttribute("data-visual-features") || cell.getAttribute("data-visual-notes") || "").trim();
@@ -2013,9 +2121,17 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
           "width:min(500px,90vw);max-height:min(560px,90vh);z-index:99999;background:#fff;" +
           "border:3px solid var(--blue);border-radius:16px;box-shadow:0 20px 80px rgba(0,0,0,0.3);" +
           "padding:10px;box-sizing:border-box;pointer-events:none;display:flex;flex-direction:column;gap:6px;";
-        var img = document.createElement("img");
-        img.src = targetImg.src;
-        img.alt = targetImg.alt || "";
+        var isVideo = targetMedia.tagName.toLowerCase() === "video";
+        var img = document.createElement(isVideo ? "video" : "img");
+        img.src = targetMedia.src;
+        if (isVideo) {
+          img.autoplay = true;
+          img.loop = true;
+          img.muted = true;
+          img.playsInline = true;
+        } else {
+          img.alt = targetMedia.alt || "";
+        }
         img.style.cssText = "width:100%;flex:1;min-height:0;object-fit:contain;display:block;border-radius:8px;";
         preview.appendChild(img);
 
@@ -2459,17 +2575,17 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
     if (!styleObj || !Array.isArray(styleObj.shots)) return;
     var sid = styleId === "A" || styleId === "B" || styleId === "C" ? styleId : "A";
     var rigA =
-      "[Rig 精修兜底] Rim Light 冷轮廓勾边 + Scan Light 窄束沿主立面扫过，强化金属/玻璃微刻面层次。";
+      "[Rig 精修兜底] Rim Light 冷轮廓勾边 + Scan Light 窄束扫描，强化材质微结构或 UI 界面的立体层次。";
     var rigB =
-      "[Rig 精修兜底] 自然窗光主光 + 轻 Rim 分离人物与产品体积；弱 Scan 掠过表壳或logo高光一度。";
+      "[Rig 精修兜底] 自然窗光主光 + 轻 Rim 分离人物与背景；营造高级且真实的呼吸感。";
     var rigC =
-      "[Rig 精修兜底] 硬边 Scan Light 高频扫动 + Rim 高光，配合变速段可剪接的闪烁节奏。";
+      "[Rig 精修兜底] 硬边高反差光影 + 局部强补光，配合变速段可剪接的闪烁节奏。";
     var audA =
-      "[ASMR 精修兜底] 金属棘轮细齿密合的低频咔哒、麂皮/纤维垫与表壳轻触的摩擦、极低环境底噪。";
+      "[ASMR 精修兜底] 极低环境底噪，配合微距下的精密物理咬合声、材质摩擦声或高级清脆的 UI 交互音效。";
     var audB =
-      "[ASMR 精修兜底] 高级织物与袖口轻掠声、皮革表带孔位穿引的微阻力、远处极弱 ambience。";
+      "[ASMR 精修兜底] 真实环境的极弱 ambience，配合人物自然的呼吸、衣物摩擦或环境白噪音。";
     var audC =
-      "[ASMR 精修兜底] 磁吸嗒合段落、硬物轻撞的清脆接触、近场 foley 与剪辑点同步的短促抽吸声。";
+      "[ASMR 精修兜底] 极具压迫感的高爆音效（磁吸/撞击/重低音下潜等），近场 foley 与剪辑点死死咬合。";
     var rig = sid === "A" ? rigA : sid === "B" ? rigB : rigC;
     var aud = sid === "A" ? audA : sid === "B" ? audB : audC;
     var si;
@@ -2501,12 +2617,12 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
       targetMin +
       "-" +
       targetMax +
-      " 秒之间。如果时长需要调整，优先通过优化单镜头 pacing（如增加 Slow-motion 的留白）或进行等比例时长伸缩来适配。严禁以任何借口添加无意义的「切片补镜」或「反复横跳」的冗余画面来强行凑数！\n\n" +
-      "【动作矢量化】：motion / visual 中**禁止**含糊写「移动」「镜头动一下」；必须优先使用可执行矢量术语并写明方向/幅度，例如 **Arc Orbit（绕拍）**、**Dolly In / Dolly Out（推拉）**、**Rack Focus（拉焦）**、Truck / Pedestal / Pan-Tilt 等，并与上一镜 End State 可剪接对齐。\n\n" +
-      "【光影 Rig 注入】：**每一镜**须在 lighting 或 visual 首句前缀中写明具体 Rig，例如 **Scan Light（窄条动态扫描高光）**、**Rim Light（轮廓勾勒分离背景）**；可组合 Fill/背光，但不得整片死平光；以强化金属/玻璃/织物等材质微结构。\n\n" +
-      "【ASMR 音效增强】：**每一镜**的 audio 字段必须包含**可感知的物理质感**描写（非空洞形容词），例如金属棘轮**细齿咬合**声、微距下**麂皮/织物纤维**摩擦声、表冠阻尼段落感、玻璃与金属轻碰的**清脆接触**等；与画面动作同步。\n\n" +
-      "【矢量化运动与光影扫描·补充】：首镜优先「极速微距 + Scan Light」制造微刻面依次闪高光；旋钮/表冠段落须写阻尼与滚花与指纹的微观咬合；相邻镜须交代矢量衔接（示例可用 Dolly Out 保持重心连贯）。\n\n" +
-      "【输出纪律】：严格保留原有 Visual DNA 与产品核心逻辑；仅在【导演精修意见】与上述约束内改写。输出 JSON 结构与原脚本一致（含 director_treatment、shots、styleName 等字段）；为对齐总秒数可微调每镜 duration、pacing，**禁止**为凑时长添加无叙事价值的碎片镜或冗余横跳。\n\n";
+      " 秒之间。如果时长需要调整，优先通过优化单镜头 pacing 或进行等比例伸缩来适配。严禁强行凑数！\n\n" +
+      "【动作矢量化】：motion / visual 中**禁止**含糊写「移动」；必须使用可执行矢量术语（如 Arc Orbit, Dolly In, Rack Focus 等）。\n\n" +
+      "【光影 Rig 注入】：**每一镜**须在 lighting 中写明具体 Rig（如 Scan Light 扫描高光、Rim Light 轮廓光），以强化产品特定材质或界面的立体层次。\n\n" +
+      "【ASMR 音效增强】：**每一镜**的 audio 字段必须根据产品形态（实体/虚拟/服饰）包含**可感知的具体质感**描写，如物理咬合声、织物摩擦声或 UI 清脆反馈声，与画面动作同步。\n\n" +
+      "【细节与衔接】：首镜优先「极速微距 + Scan Light」制造微结构高光；涉及交互段落须写出阻尼、触感或反馈的微观细节；相邻镜须交代矢量衔接。\n\n" +
+      "【输出纪律】：严格保留原有 Visual DNA 与核心逻辑。输出 JSON 结构与原脚本一致（含 director_treatment、shots 等）。\n\n";
 
     /** 精修：OpenAI Chat Completions（网络层见 llmApiFetch） */
     const res = await llmApiFetch("chat/completions", {
@@ -2625,7 +2741,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
   function getStyleMoodSuffix(style, sIdx) {
     var name = String((style && style.styleName) || "");
     if (/style\s*a\b/i.test(name) || (sIdx === 0 && !/style\s*[bc]\b/i.test(name))) {
-      return "macro probe lens, extreme micro-details, sharp technical focus, pristine material texture, cinematic clinical lighting, minimalist clean laboratory environment, premium industrial packshot standard.";
+      return "extreme micro-details, sharp technical focus, pristine texture or UI clarity, cinematic clinical lighting, minimalist premium presentation, commercial standard.";
     }
     if (/style\s*b\b/i.test(name) || sIdx === 1) {
       return "High-end lifestyle photography, warm afternoon ambient light, soft natural shadows, beautiful depth of field, blurred background, cinematic elegant bokeh, organic and authentic feel.";
@@ -2656,10 +2772,18 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
   };
 
   var MATERIAL_DEFAULT_COMMERCIAL =
-    "Material physics (general product): industrial-grade PBR surface fidelity, controlled studio speculars, micro-texture preserved, color-accurate albedo, no AI-smear or wax-doll artifacts—premium commercial packshot standard.";
+    "Material physics (general product): industrial-grade PBR surface fidelity, controlled studio speculars, premium commercial packshot standard.";
+
+  var MATERIAL_VIRTUAL_UI =
+    "Digital interface: sleek flat design, glowing neon accents, high-end UI/UX presentation, holographic projection elements, crisp vector-like graphics, modern tech aesthetic.";
 
   function resolveMaterialConstraintLine(productName, category) {
     var hay = (String(productName || "") + " " + String(category || "")).toLowerCase();
+
+    if (/app|软件|系统|界面|ui|虚拟|数字|平台|服务|数据|网络/i.test(hay)) {
+      return MATERIAL_VIRTUAL_UI;
+    }
+
     var lines = [];
     var matKey;
     for (matKey in MATERIAL_PROPERTIES_MAP) {
@@ -2668,9 +2792,9 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         lines.push(MATERIAL_PROPERTIES_MAP[matKey]);
       }
     }
-    if (lines.length) return "Physically accurate PBR surface, rim-light edge separation, controlled studio specular roll-off. " + lines.join(" ");
+    if (lines.length) return "Physically accurate PBR surface, rim-light edge separation. " + lines.join(" ");
     return (
-      "Physically accurate PBR surface, rim-light edge separation, controlled studio specular roll-off. " +
+      "Physically accurate PBR surface, rim-light edge separation. " +
       MATERIAL_DEFAULT_COMMERCIAL
     );
   }
@@ -2678,7 +2802,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
   function buildVisualDrawPrompt(shot, style, productName, sIdx, mode) {
     if (!mode) mode = "dalle";
     var exactProductDescription = style && style.visualDNA ? style.visualDNA : productName;
-    var cleanVisual = String(shot.visual || "").replace(/\(参考素材格[^)]+\)/g, "").trim();
+    var cleanVisual = String(shot.visual || "").replace(/\((?:参考|动态)素材格[^)]+\)/g, "").trim();
     var engPrompt = shot.eng_prompt != null && String(shot.eng_prompt).trim() ? String(shot.eng_prompt).trim() : "";
     var mood = getStyleMoodSuffix(style, sIdx);
     var sceneCore = engPrompt || cleanVisual;
@@ -2706,15 +2830,23 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         .join(", ");
     }
 
-    // Midjourney：电影摄影流
+    // Midjourney：电影摄影流（动态视频素材格禁止携带视频 URL / --sref / --cref）
     if (mode === "mj") {
-      return [
+      var mjCore = sceneCore;
+      if (shotUsesDynamicVideoAsset(shot)) {
+        mjCore = sanitizeMjPromptForVideoAsset(mjCore);
+      }
+      var mjLine = [
         "Cinematic high-end photography",
-        sceneCore,
+        mjCore,
         "Product details: " + exactProductDescription,
         mood,
         "8k resolution, photorealistic, shot on ARRI Alexa",
       ].join(", ");
+      if (shotUsesDynamicVideoAsset(shot)) {
+        mjLine = sanitizeMjPromptForVideoAsset(mjLine);
+      }
+      return mjLine;
     }
     // Nano Banner：电商强转化流
     return [
@@ -3049,7 +3181,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
           var vis = document.createElement("div");
           vis.style.cssText = "font-size: 0.85rem; line-height: 1.5; color: var(--text); flex: 1;";
           // 💡 精益求精：去掉文本中丑陋的“(参考素材格 #X)”标记，因为上方卡片已渲染直观配图
-          vis.textContent = String(shot.visual || "").replace(/\(参考素材格[^)]+\)/g, "").trim();
+          vis.textContent = String(shot.visual || "").replace(/\((?:参考|动态)素材格[^)]+\)/g, "").trim();
           content.appendChild(vis);
 
           var meta = document.createElement("div");
@@ -3198,6 +3330,14 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
     });
   }
 
+  function buildMidjourneyImagineLine(shot, style, productName, sIdx, mjSuffix) {
+    var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx, "mj");
+    if (shotUsesDynamicVideoAsset(shot)) {
+      drawPrompt = sanitizeMjPromptForVideoAsset(drawPrompt);
+    }
+    return "/imagine prompt: " + drawPrompt + mjSuffix;
+  }
+
   // ================= 导出 Midjourney 商业级提示词 =================
   function getMidjourneyArFromRatioSelect() {
     var ratioEl = document.getElementById("ratio-select");
@@ -3234,8 +3374,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
       var mjSuffix = " --style raw --v 6.0 --q 2 " + ar;
 
       var segments = style.shots.map(function (shot, i) {
-        var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx, "mj");
-        return { content: "/imagine prompt: " + drawPrompt + mjSuffix };
+        return { content: buildMidjourneyImagineLine(shot, style, productName, sIdx, mjSuffix) };
       });
 
       openPromptModal("🎨 导出 Midjourney 商业级提示词", segments);

@@ -269,7 +269,8 @@
       background: #fff;
       transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
-    .gallery-item img {
+    .gallery-item img,
+    .gallery-item video {
       width: 100%;
       height: 100%;
       object-fit: cover;
@@ -1027,12 +1028,12 @@
       </div>
 
       <div class="gallery-container">
-        <div class="drop-zone" id="product-drop-zone" role="button" tabindex="0" aria-label="点击多选图片，或拖拽文件夹；Ctrl+V 粘贴图片">
+        <div class="drop-zone" id="product-drop-zone" role="button" tabindex="0" aria-label="点击多选图片或视频，或拖拽文件夹；Ctrl+V 粘贴图片">
           <input
             type="file"
             id="product-image-input"
             class="drop-zone__input"
-            accept="image/*"
+            accept="image/*,video/mp4,video/quicktime,video/webm"
             multiple
             tabindex="-1"
             aria-hidden="true"
@@ -1995,15 +1996,15 @@
         return productFiles.length > 0;
       }
 
-      function isProductImageFile(f) {
+      function isProductAssetFile(f) {
         if (!f) return false;
-        if (f.type && /^image\//i.test(f.type)) return true;
-        return /\.(jpe?g|png|gif|webp|bmp|heic|heif|svg)$/i.test(f.name || "");
+        if (f.type && /^(image|video)\//i.test(f.type)) return true;
+        return /\.(jpe?g|png|gif|webp|bmp|heic|heif|svg|mp4|mov|webm)$/i.test(f.name || "");
       }
 
       function revokeGalleryBlobUrls(gallery) {
         if (!gallery) return;
-        var imgs = gallery.querySelectorAll(".gallery-item img");
+        var imgs = gallery.querySelectorAll(".gallery-item img, .gallery-item video");
         for (var gi = 0; gi < imgs.length; gi++) {
           var s = imgs[gi].src || "";
           if (s.indexOf("blob:") === 0) {
@@ -2040,10 +2041,20 @@
             item.className = "gallery-item";
             item.setAttribute("data-visual-class", "");
             item.setAttribute("data-visual-features", "");
+
+            var isVideo =
+              (file.type && /^video\//i.test(file.type)) || /\.(mp4|mov|webm)$/i.test(file.name || "");
+            item.setAttribute("data-asset-type", isVideo ? "video" : "image");
+
+            var mediaHtml = isVideo
+              ? '<video src="' +
+                url +
+                '" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;display:block;"></video>'
+              : '<img src="' + url + '" alt="">';
+
             item.innerHTML =
-              '<img src="' +
-              url +
-              '" alt=""><button type="button" class="gallery-item__del" data-index="' +
+              mediaHtml +
+              '<button type="button" class="gallery-item__del" data-index="' +
               index +
               '" aria-label="\u5220\u9664">\u00d7</button>';
             gallery.appendChild(item);
@@ -2081,7 +2092,7 @@
       async function handleIncomingFiles(filesOrItems) {
         var newFiles = [];
         Array.prototype.forEach.call(filesOrItems || [], function (f) {
-          if (isProductImageFile(f)) newFiles.push(f);
+          if (isProductAssetFile(f)) newFiles.push(f);
         });
         productFiles = productFiles.concat(newFiles);
         renderGallery();
@@ -3015,11 +3026,11 @@
             var list = Array.prototype.slice.call(items);
             for (var di = 0; di < list.length; di++) {
               var entry = list[di].webkitGetAsEntry && list[di].webkitGetAsEntry();
-              if (entry) await scanFilesRecursively(entry, files, isProductImageFile);
+              if (entry) await scanFilesRecursively(entry, files, isProductAssetFile);
             }
           }
           if (!files.length && dt.files && dt.files.length) {
-            files = Array.prototype.slice.call(dt.files).filter(isProductImageFile);
+            files = Array.prototype.slice.call(dt.files).filter(isProductAssetFile);
           }
           handleIncomingFiles(files).catch(function () {});
         });
@@ -3035,7 +3046,7 @@
         function (e) {
           var dt = e.clipboardData;
           var raw = collectClipboardImageFiles(dt);
-          var imgs = raw.filter(isProductImageFile);
+          var imgs = raw.filter(isProductAssetFile);
           if (!imgs.length) return;
           if (
             activeElementIsProductLineTextInput(document.activeElement) &&
