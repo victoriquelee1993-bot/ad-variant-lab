@@ -671,6 +671,8 @@
       }
 
       initDashboardSkeleton();
+      resetStoryEngineProgressState();
+      window.__STORY_ENGINE_GENERATING__ = true;
       setLabBusy(false);
 
       await generateThreeStyleStoryboards(params, apiKey, function (idx, styleObj) {
@@ -679,8 +681,9 @@
 
       finalizeProgressiveStoryboardDashboard();
       setStoryEngineProgress("✅ 三套分镜已全部就绪", 100);
+      window.__STORY_ENGINE_GENERATING__ = false;
       setTimeout(function () {
-        clearStoryEngineProgress();
+        clearStoryEngineProgress(true);
       }, 2200);
     } catch (err) {
       console.error("分镜生成异常:", err);
@@ -688,7 +691,8 @@
       if (errMsg.indexOf("【已取消】") === -1) {
         alert(formatLlmFetchAlertMessage(err, "分镜引擎故障"));
       }
-      clearStoryEngineProgress();
+      window.__STORY_ENGINE_GENERATING__ = false;
+      clearStoryEngineProgress(true);
     } finally {
       currentStoryboardController = null;
       setLabBusy(false);
@@ -698,7 +702,13 @@
   });
 
   /** 分镜引擎实时进度（插入在 Craft Storyboard 按钮下方） */
-  function setStoryEngineProgress(text, pct) {
+  var storyEngineProgressPctFloor = 0;
+
+  function resetStoryEngineProgressState() {
+    storyEngineProgressPctFloor = 0;
+  }
+
+  function setStoryEngineProgress(text, pct, opts) {
     var host = document.getElementById("lab-story-engine-progress");
     if (!host) {
       var btn = document.getElementById("btnCraftStoryboard");
@@ -716,13 +726,26 @@
     }
     var bar = document.getElementById("lab-story-engine-progress-bar");
     var lab = document.getElementById("lab-story-engine-progress-label");
-    if (bar) bar.style.width = Math.max(0, Math.min(100, pct == null ? 0 : pct)) + "%";
-    if (lab) lab.textContent = text || "";
+    opts = opts || {};
+    if (!opts.preserveLabel && text != null && String(text).trim()) {
+      if (lab) lab.textContent = String(text);
+    }
+    if (typeof pct === "number" && !isNaN(pct)) {
+      if (opts.monotonic) {
+        storyEngineProgressPctFloor = Math.max(storyEngineProgressPctFloor, pct);
+        pct = storyEngineProgressPctFloor;
+      }
+      if (bar) bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
+    } else if (pct == null && opts.monotonic && bar) {
+      bar.style.width = Math.max(0, Math.min(100, storyEngineProgressPctFloor)) + "%";
+    }
   }
 
-  function clearStoryEngineProgress() {
+  function clearStoryEngineProgress(force) {
+    if (!force && window.__STORY_ENGINE_GENERATING__) return;
     var host = document.getElementById("lab-story-engine-progress");
     if (host) host.remove();
+    if (force) resetStoryEngineProgressState();
   }
 
   /** 结构化提取 + JSON.parse；失败时使用括号补全兜底 */
@@ -1536,6 +1559,15 @@
       void styleObj;
       void styleCfg;
     }
+
+    /** 与 initDashboardSkeleton 共享的三槽位全局缓存，供分批/分幕实时上屏 */
+    var liveResults = window.__LAST_STORYBOARD_DATA__;
+    if (!Array.isArray(liveResults)) {
+      liveResults = [null, null, null];
+    } else {
+      liveResults = liveResults.slice();
+    }
+
     const craftSingleStyle = async function (styleCfg, styleIndex) {
       var minEl = document.getElementById("totalSecMin");
       var maxEl = document.getElementById("totalSecMax");
@@ -1672,18 +1704,50 @@
         "【绝对物理隔离 · 本套 Style 视听防火墙】\n" +
         "你当前仅允许执行本套 Style 的物理法则，与另外两套风格【零交叉、零借用】：\n" +
         (isStyleA
-          ? "- 【隔离禁令】严禁 Whip Pan、Match Cut、快切、人物剧情线、生活场景叙事、ASMR 暴力砸击、0.5s–1.5s 碎镜；你的世界是「极慢 + 极微距 + 极静」。\n"
+          ? "- 【隔离禁令】严禁 Whip Pan、Match Cut、快切、微电影式人物剧情线、生活场景叙事、ASMR 暴力砸击、0.5s–1.5s 碎镜；你的世界是「极慢 + 隐喻空镜 + 极微距产品切片」。\n"
           : isStyleB
             ? "- 【隔离禁令】严禁 Style A 式全程微观悬念堆叠（禁止全片只有肌理无人物）；严禁 Style C 式 0.5s 碎镜轰炸、Whip Pan 残影、无剧情物理砸击；你的世界是「固定主角 + 动作延续 + 2–4s 呼吸镜」。\n"
-            : "- 【隔离禁令】严禁 Style A 式 3.5s+ 慢镜拉焦悬念、严禁 Style B 式舒缓人物起幅与长呼吸叙事；严禁把产品安安静静摆着拍；你的世界是「0.5–1.5s 暴力交互 + 极速残影」。\n");
+            : "- 【隔离禁令】严禁 Style A 式 3.5s+ 慢镜拉焦悬念、严禁 Style B 式舒缓人物起幅与长呼吸叙事；严禁把产品安安静静摆着拍；你的世界是「0.5–1.5s 感官碎片快剪 + 生理反应 + 极速残影」。\n");
+
+      var minMetaphorBrollShots = Math.max(1, Math.ceil(targetNodes * 0.4));
+      var maxDirectProductShots = Math.max(1, targetNodes - minMetaphorBrollShots);
+
+      var antiProductOnlyMandateBlock = "";
+      if (isStyleA || isStyleC) {
+        antiProductOnlyMandateBlock =
+          "【反产品说明书死命令 · Anti-Product-Only Mandate】\n" +
+          "真正的商业大片绝不是 100% 的时间都在展示产品本体！若全片沦为「纯产品堆砌 / 说明书式摆拍」，视为严重创意事故，Client 会直接拒稿！\n" +
+          "【全局死命令：强插空镜与隐喻】本套 Style " +
+          (isStyleA ? "A" : "C") +
+          " 中，【至少 " +
+          minMetaphorBrollShots +
+          " 镜（≥全片 40%）】必须是「非产品本体」画面：高级视觉隐喻 B-roll、自然奇观空镜、环境/情绪/生理反应碎片！直接展示产品本体的镜头【不得超过 " +
+          maxDirectProductShots +
+          " 镜】。\n" +
+          "在 `director_treatment` 中须明示：① 本套核心视觉隐喻词典（至少 3 组，与卖点一一对应）；② 逐镜标注 `[隐喻空镜]` 或 `[产品触发镜]`。\n\n";
+      }
 
       var adaptiveStyleRuleBlock = "";
       if (isStyleA) {
         adaptiveStyleRuleBlock =
-          "【本套执行 · Style A (Precision - 极致空间与高冷悬念)】\n" +
+          "【本套执行 · Style A (Precision - 高冷悬念与视觉隐喻)】\n" +
           stylePhysicalIsolationBlock +
-          "【第一镜 · 正面强制动作】第一镜【必须且只能】描写局部的抽象光影或极度微观的材质纹理。严禁在文本中提及产品全名，【绝对禁止】分配或使用 `(参考素材格 #X)`。若第一镜出现产品实体全貌，视为严重事故！\n" +
-          "核心精神：剥离环境、极致放大、冷峻科研感。\n" +
+          antiProductOnlyMandateBlock +
+          "【第一镜 · 正面强制动作】第一镜【必须且只能】是【非产品本体】的高级视觉隐喻或自然奇观空镜（如墨滴炸开、日全食光晕、冰川纹理），严禁产品全貌/全名及 `(参考素材格 #X)`。\n" +
+          "核心精神：剥离环境、极致放大、冷峻科研感——但【绝不是】围着产品绕圈的说明书！\n" +
+          "【破局指令 · 反产品说明书】严禁整支片子只围着产品绕圈！必须使用【高级视觉隐喻】表达每一个卖点；产品只是隐喻体系中的「最后一枚拼图」。\n" +
+          "【镜头强制要求 · 隐喻空镜】至少 " +
+          minMetaphorBrollShots +
+          " 镜必须是与卖点绑定的隐喻 B-roll / 自然奇观：\n" +
+          "  - 卖点偏速度/性能 → 穿插光爆、流体金属、深海漩涡、疾风掠沙等微距空镜；\n" +
+          "  - 卖点偏材质/工艺 → 穿插丝绸剥落、冰川开裂、沙丘纹理、矿晶断面等自然奇观；\n" +
+          "  - 卖点偏色彩/设计 → 穿插墨滴扩散、极光色带、日全食光晕、棱镜折射等抽象空镜；\n" +
+          "  - 虚拟/软件 → 穿插数据洪流、玻璃拟态碎裂、代码雨、拓扑网格等界面隐喻空镜。\n" +
+          "【文本示范 · 必须达到此颗粒度】：\n" +
+          "  「镜头1：一滴黑色墨水在纯白虚空中极速炸开，边缘拉出丝状尾迹（隐喻色彩张力）；\n" +
+          "   镜头2：极慢 Rack Focus，焦点从虚化的产品边缘冷光滑至金属倒角肌理（产品仅局部切片）；\n" +
+          "   镜头3：巨大日全食光晕在画面中央缓慢呼吸（隐喻设计哲学）；\n" +
+          "   末镜：产品 Hero 轮廓在冷峻 Rim Light 下首次完整定格。」\n" +
           "【镜头节奏死命令】极静、极慢！每一镜 `duration` 必须在 " +
           STYLE_A_DUR_MIN +
           "–" +
@@ -1692,17 +1756,17 @@
           targetMin +
           "–" +
           targetMax +
-          "s，系统分配你【" +
+          "s，系统分配【" +
           minNodes +
           "–" +
           maxNodes +
           " 镜（精准 " +
           targetNodes +
-          " 镜）】；若总长仅约 15s，全篇最多 3–4 镜，严禁碎镜凑数！\n" +
-          "【悬念到底死命令】除全片【最后一镜】定格外，前中期所有镜头【绝对禁止】揭示产品全貌或整体轮廓！必须从头到尾用不同角度的极度微观肌理堆叠（边缘倒角、局部材质纤维、缓慢流动光斑等），每镜换一个微观视角。\n" +
-          "【视觉死命令】运镜【只能】是极慢推拉（Slow Dolly In）或拉焦（Rack Focus）；严禁 Whip Pan、快摇、快切、Match Cut 及任何快速运动。\n" +
-          "  - 硬实体/软实体：仅末镜允许 Hero 轮廓定格；此前只有微观肌理与抽象光影。\n" +
-          "  - 虚拟/软件/无形服务：起幅为发光代码/3D Logo 材质/极简 Typography 微观切片，禁止全貌 UI 说明书直至末镜。\n" +
+          " 镜）】；若总长约 15s，全篇最多 3–4 镜，其中至少 " +
+          minMetaphorBrollShots +
+          " 镜必须是隐喻空镜！\n" +
+          "【悬念到底死命令】除全片【最后一镜】Hero 定格外，所有 `[产品触发镜]` 仅允许局部切片/边缘光/微观肌理，【绝对禁止】产品全貌或整体轮廓！\n" +
+          "【视觉死命令】运镜【只能】Slow Dolly In 或 Rack Focus；隐喻空镜与产品切片交替编排，每镜换一个视角，禁止连续两镜拍同一产品部位。\n" +
           "打光：高对比 Rim Light / Scan Light，客观克制。\n";
       } else if (isStyleB) {
         adaptiveStyleRuleBlock =
@@ -1726,23 +1790,43 @@
           "  - 虚拟/服务：屏幕内容仅以过肩或眼中倒影出现；空间与时间绝对连贯。\n";
       } else {
         adaptiveStyleRuleBlock =
-          "【本套执行 · Style C (Sensory - 高爆感官刺激与快剪)】\n" +
+          "【本套执行 · Style C (Sensory - 极致快剪与感官反应)】\n" +
           stylePhysicalIsolationBlock +
-          "【第一镜 · 正面强制动作】第一镜【必须且只能】是一次极度暴力的物理交互（如重物砸击、流体炸裂、极速残影）。禁止静止的产品全貌展示，必须以动态奇观破局。\n" +
-          "核心精神：高频次转场、物理极限测试、ASMR 听觉轰炸。\n" +
+          antiProductOnlyMandateBlock +
+          "【第一镜 · 正面强制动作】第一镜【必须且只能】是【非产品本体】的感官碎片：环境失控（震波涟漪、霓虹狂闪、玻璃震颤）或人类生理反应（瞳孔骤缩、皮肤战栗），也可以是极度暴力的物理交互破局；禁止静止产品全貌。\n" +
+          "核心精神：高频次转场、物理极限测试、ASMR 听觉轰炸——产品只是触发感官风暴的「开关」，不是每一镜的主角！\n" +
+          "【破局指令 · 反产品说明书】严禁只对产品进行物理破坏式摆拍！必须穿插【人类生理反应】与【环境失控】的感官碎片，形成「反应 → 触发 → 产品」的剪辑链！\n" +
+          "【镜头强制要求 · 感官碎片】至少 " +
+          minMetaphorBrollShots +
+          " 镜（≥40%）必须是「非产品本体」画面，单镜 " +
+          STYLE_C_DUR_MIN +
+          "–" +
+          STYLE_C_DUR_MAX +
+          "s 快剪中必须穿插：\n" +
+          "  - 人类生理：瞳孔骤缩特写、起鸡皮疙瘩的皮肤、带汗水的侧脸残影、喉结吞咽、指节发白攥拳；\n" +
+          "  - 环境失控：随节拍疯狂闪烁的霓虹灯、被震碎的玻璃杯、桌面水杯疯狂涟漪、粉尘在光束中爆炸；\n" +
+          "  - 听觉可视化：重低音震纹、耳膜共鸣式的画面抖动、肾上腺素飙升的心跳残影。\n" +
+          "  产品镜头仅作为链条中的「触发开关」，【不得超过 " +
+          maxDirectProductShots +
+          " 镜】，且必须嵌在反应碎片之间，禁止连续两镜纯产品。\n" +
+          "【文本示范 · 必须达到此颗粒度】：\n" +
+          "  「0.5s：超低频音响重低音，画面边缘产生暗角震颤；\n" +
+          "   0.5s：旁边桌上水杯水面疯狂泛起同心涟漪（环境失控）；\n" +
+          "   0.5s：主角带汗水的侧脸残影 Whip Pan 掠过（生理反应）；\n" +
+          "   0.5s：产品特写以撞击感砸向镜头（触发开关，非说明书摆拍）。」\n" +
           "【镜头节奏死命令】极度狂暴！每一镜 `duration` 必须死卡在 " +
           STYLE_C_DUR_MIN +
           "–" +
           STYLE_C_DUR_MAX +
-          " 秒（宫格/阵列分屏镜除外）。必须高密度视觉轰炸，本套须精准产出 " +
+          " 秒（宫格/阵列分屏镜除外）。本套须精准产出 " +
           targetNodes +
           " 镜（不少于 " +
           minNodes +
           " 镜，可至 " +
           maxNodes +
           " 镜）！\n" +
-          "【暴力奇观死命令】严禁把产品安安静静摆着拍。每一镜必须伴随剧烈物理交互（重物砸击、水花炸裂、高速坠落、粉末飞溅）或极速运镜残影（Whip Pan / Match Cut）；虚拟类用 UI 爆破、弹窗砸击、操作残影。\n" +
-          "【音效死命令】每一镜 `audio` 必须配合与动作死死咬合的重低音或极其清脆的 ASMR 物理破坏声（玻璃碎裂、沉闷撞击、尖锐撕裂等）。高潮可闪现宫格阵列。\n";
+          "【暴力奇观死命令】产品相关镜必须伴随环境/生理连锁反应（砸击→涟漪→皮肤战栗→产品残影），禁止孤立的产品破坏特写连发；虚拟类用 UI 爆破、弹窗砸击、数据残影，同样须穿插「用户生理/环境反馈」碎片。\n" +
+          "【音效死命令】每一镜 `audio` 必须咬合重低音下潜或极其清脆的 ASMR 物理破坏声，生理镜须有呼吸/心跳/耳鸣等近场 foley。高潮可闪现宫格阵列。\n";
       }
 
       var priorityWeightDeclaration =
@@ -1768,17 +1852,19 @@
 
       if (isStyleA) {
         dynamicPacingBlock +=
-          "👉 【Style A 极慢悬念管线】：全片仅 " +
+          "👉 【Style A 极慢隐喻管线】：全片 " +
           targetNodes +
           " 镜，每镜 " +
           STYLE_A_DUR_MIN +
           "–" +
           STYLE_A_DUR_MAX +
-          "s，禁止 <" +
-          STYLE_A_DUR_MIN +
-          "s 的碎镜！前 " +
+          "s；其中【至少 " +
+          minMetaphorBrollShots +
+          " 镜必须是 `[隐喻空镜]`】（自然奇观/抽象 B-roll），产品 `[触发镜]` 不得超过 " +
+          maxDirectProductShots +
+          " 镜！前 " +
           (targetNodes > 1 ? targetNodes - 1 : 0) +
-          " 镜全部为不同微观肌理/抽象光影，仅末镜允许 Hero 定格。即使投放平台为短视频，也【不得】加快节奏或增加镜数！\n";
+          " 镜禁止产品全貌，隐喻空镜与产品局部切片必须交替出现；仅末镜允许 Hero 定格。即使投放平台为短视频，也【不得】加快节奏或砍掉空镜！\n";
       } else if (isStyleB) {
         dynamicPacingBlock +=
           "👉 【Style B 微电影管线】：全片 " +
@@ -1792,19 +1878,19 @@
           " 镜或动作断档视为生产事故！\n";
       } else {
         dynamicPacingBlock +=
-          "👉 【Style C 狂暴快剪管线】：全片 " +
+          "👉 【Style C 感官碎片快剪管线】：全片 " +
           targetNodes +
           " 镜，每镜 " +
           STYLE_C_DUR_MIN +
           "–" +
           STYLE_C_DUR_MAX +
-          "s（宫格镜除外）！必须通过暴力交互 + Whip Pan/Match Cut 填满 " +
-          targetMin +
-          "-" +
-          targetMax +
-          "s。少于 " +
+          "s；【至少 " +
+          minMetaphorBrollShots +
+          " 镜必须是 `[感官碎片]`】（生理反应/环境失控，非产品本体），产品 `[触发镜]` 不得超过 " +
+          maxDirectProductShots +
+          " 镜！剪辑链必须是「反应→环境→产品→反应」交替，禁止连续纯产品破坏镜。少于 " +
           minNodes +
-          " 镜将被判定为严重生产事故！严禁早期草草收尾！\n";
+          " 镜将被判定为严重生产事故！\n";
       }
 
       const systemPrompt = `${priorityWeightDeclaration}你是一位轴线逻辑强悍、精通 4A 大厂全套提案心法的顶级 TVC 广告片导演。
@@ -1812,10 +1898,11 @@
 
 【导演最高铁律】
 1. 🛑 绝对物理隔离：严格遵守本套 Style 的【镜头节奏死命令】与【绝对物理隔离】，禁止混入另外两套风格的运镜速度、单镜时长或叙事手法。
-2. 🛑 拒绝陪衬：本套提案必须 100% 紧扣产品本体与用户具体卖点，视听视角须与另外两套风格（若存在）彻底可区分。
-3. 🛑 纯正语言纪律：除 \`eng_prompt\` 必须是精炼的纯英文生图词（须随实体类别适配：实体侧重材质/光效，虚拟侧重 UI/空间化界面，服务侧重排版/符号隐喻）外，其余字段必须【全部使用纯正专业中文】！绝对禁止中英混杂！
-4. 🛑 第一镜纪律：第一镜【必须且只能】执行本套 Style 的【第一镜 · 正面强制动作】；平台常规逻辑仅从第二镜起叠加；每镜 \`duration\` 必须落在本套 Style 规定的秒数区间内！
-5. 🛑 System 标记滤除：\`visual\` 正文内绝对不准包含 #、素材格 或任何系统内部编号文字，必须是纯粹、高可读性的画面描述。
+2. 🛑 反产品说明书${isStyleA || isStyleC ? "（Style A/C 死刑线）" : ""}：${isStyleA || isStyleC ? "全片≥40% 镜头必须是「非产品本体」的隐喻空镜或感官碎片；禁止纯产品堆砌摆拍！" : "本套须避免机械说明书式摆拍，卖点须通过具体视听动作呈现。"}
+3. 🛑 拒绝陪衬：本套提案必须 100% 紧扣产品本体与用户具体卖点，视听视角须与另外两套风格（若存在）彻底可区分。
+4. 🛑 纯正语言纪律：除 \`eng_prompt\` 必须是精炼的纯英文生图词（须随实体类别适配：实体侧重材质/光效，虚拟侧重 UI/空间化界面，服务侧重排版/符号隐喻）外，其余字段必须【全部使用纯正专业中文】！绝对禁止中英混杂！
+5. 🛑 第一镜纪律：第一镜【必须且只能】执行本套 Style 的【第一镜 · 正面强制动作】；平台常规逻辑仅从第二镜起叠加；每镜 \`duration\` 必须落在本套 Style 规定的秒数区间内！
+6. 🛑 System 标记滤除：\`visual\` 正文内绝对不准包含 #、素材格 或任何系统内部编号文字，必须是纯粹、高可读性的画面描述。
 
 ${adaptiveEntityMappingBlock}
 ${adaptiveStyleRuleBlock}
@@ -1852,6 +1939,45 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
       var maxBatches = isStyleC ? 8 : Math.ceil(targetNodes / batchSize) + 1; // Style C：最多 8 批接力，网络闪断时继续补齐
       var lastShotContext = null;
 
+      function styleBatchProgressPct(doneShots) {
+        var styleBase = 8 + (typeof styleIndex === "number" ? styleIndex : 0) * 28;
+        var styleSpan = 28;
+        var ratio = targetNodes > 0 ? Math.min(1, doneShots / targetNodes) : 0;
+        return styleBase + ratio * styleSpan;
+      }
+
+      function flushPartialStoryboardToScreen(batchActDone) {
+        while (liveResults.length < 3) liveResults.push(null);
+        var partialStyleSnapshot = {
+          styleName: styleObj.styleName || styleCfg.name,
+          director_treatment: styleObj.director_treatment || "",
+          visualDNA: styleObj.visualDNA || "",
+          shots: currentShots.slice(),
+          _generating: currentShots.length < targetNodes,
+        };
+        liveResults[styleIndex] = partialStyleSnapshot;
+        window.__LAST_STORYBOARD_DATA__ = liveResults;
+        try {
+          renderStoryboardDashboard(null, { incrementalPartial: true });
+        } catch (renderErr) {
+          console.warn("[渐进上屏] 分镜板刷新跳过:", renderErr);
+        }
+        var pct = styleBatchProgressPct(currentShots.length);
+        if (batchActDone === 1 && currentShots.length < targetNodes) {
+          setStoryEngineProgress(
+            "🎬 第一幕（起幅悬念）已生成并解锁，正在无缝衔接第二幕（核心卖点）...",
+            pct,
+            { monotonic: true }
+          );
+        } else if (batchActDone === 2 && currentShots.length < targetNodes) {
+          setStoryEngineProgress(
+            "⚡ 前两幕剧情已锁死上屏，正在全力冲刺第三幕（高潮定格）...",
+            pct,
+            { monotonic: true }
+          );
+        }
+      }
+
       while (currentShots.length < targetNodes && batchCount < maxBatches) {
         batchCount++;
         var stopBatching = false;
@@ -1859,8 +1985,20 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         if (shotsToRequest <= 0) break;
 
         setStoryEngineProgress(
-          styleCfg.name + " 正在分批生成 (第 " + batchCount + " 批)... 已完成 " + currentShots.length + "/" + targetNodes + " 镜",
-          10 + (currentShots.length / targetNodes) * 30
+          batchCount === 1
+            ? styleCfg.name + " 正在推演第一幕（起幅悬念）… 已完成 " + currentShots.length + "/" + targetNodes + " 镜"
+            : batchCount > 3
+              ? styleCfg.name +
+                " 正在分批生成 (第 " +
+                batchCount +
+                " 批)... 已完成 " +
+                currentShots.length +
+                "/" +
+                targetNodes +
+                " 镜"
+              : null,
+          styleBatchProgressPct(currentShots.length),
+          batchCount === 2 || batchCount === 3 ? { preserveLabel: true, monotonic: true } : { monotonic: true }
         );
 
         // --- 1. 强制生成序列，但赋予素材“脑补”特权 ---
@@ -1887,7 +2025,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
             "【系统底层锁定】：本批次的 `source_image_id` 序列已锁定为：" +
             blueprintIds.join(" -> ") +
             "。\n" +
-            "⚠️【核弹级豁免权】：如果当前风格要求你写人物、生活场景或抽象奇观（特别是 Style B 和 C 的开场），请你【完全无视】该素材图里真正画了什么！尽情虚构你要的电影画面，把这个 ID 纯粹当成后台占位符！绝不要被素材绑架！";
+            "⚠️【核弹级豁免权】：如果当前风格要求你写隐喻空镜、自然奇观、生理反应碎片、生活场景或抽象奇观（Style A/C 的 B-roll 与 Style B/C 的开场），请你【完全无视】该素材图里真正画了什么！尽情虚构你要的电影画面，把这个 ID 纯粹当成后台占位符！绝不要被素材绑架！";
         } else {
           batchBlueprintStr = "【单素材变奏】：仅1张图。请运用极度微距、光影切换或人物遮挡等手段制造画面差异。";
         }
@@ -1897,11 +2035,11 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         if (batchCount === 1) {
           if (isStyleA) {
             narrativePhase =
-              "【第一幕：高冷悬念起幅】本批镜头每镜 duration 必须 " +
+              "【第一幕：隐喻悬念起幅】本批每镜 " +
               STYLE_A_DUR_MIN +
               "–" +
               STYLE_A_DUR_MAX +
-              "s，仅 Slow Dolly In / Rack Focus。第一镜：局部抽象光影或极度微观材质；本批【全部】禁止产品全貌/整体轮廓/产品全名。若本批含末镜之前的铺垫，继续堆叠不同微观肌理（倒角、纤维、光斑）。";
+              "s，仅 Slow Dolly In / Rack Focus。第一镜必须是【非产品】隐喻空镜（墨滴/日食/自然奇观）；本批至少一半镜头为 `[隐喻空镜]`，其余为产品局部切片，【全部】禁止产品全貌。在 visual 开头标注 `[隐喻空镜]` 或 `[产品触发镜]`。";
           } else if (isStyleB) {
             narrativePhase =
               "【第一幕：微电影起幅】本批每镜 duration 必须 " +
@@ -1911,20 +2049,20 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
               "s。第一镜：固定主角出场或环境氛围；禁止第一镜硬塞产品。本批内镜头须写成同一动作链的顺滑延续（伸手→握持→使用），产品从第二镜起作剧情道具介入。";
           } else {
             narrativePhase =
-              "【第一幕：感官奇观起幅】本批每镜 duration 必须 " +
+              "【第一幕：感官碎片起幅】本批每镜 " +
               STYLE_C_DUR_MIN +
               "–" +
               STYLE_C_DUR_MAX +
-              "s。第一镜：极度暴力物理/界面交互破局；本批每一镜须有砸击/炸裂/残影/Whip Pan，禁止静态摆拍产品。";
+              "s。第一镜必须是【非产品】感官碎片（涟漪/瞳孔/霓虹狂闪/重低音震纹）；本批至少一半为 `[感官碎片]`，产品 `[触发镜]` 须嵌在反应链中，禁止连续纯产品。在 visual 开头标注镜型。";
           }
         } else if (batchCount === 2) {
           if (isStyleA) {
             narrativePhase =
-              "【第二幕：微观悬念加深】本批继续 Style A 物理隔离：每镜 " +
+              "【第二幕：隐喻与卖点交织】本批每镜 " +
               STYLE_A_DUR_MIN +
               "–" +
               STYLE_A_DUR_MAX +
-              "s，仅慢推/拉焦；仍【禁止】产品全貌，换用全新微观肌理视角堆叠卖点暗示。";
+              "s；继续 `[隐喻空镜]` 与自然奇观堆叠卖点暗示（速度→流体/光爆，材质→冰川/丝绸），产品仅局部切片，【禁止】全貌。";
           } else if (isStyleB) {
             narrativePhase =
               "【第二幕：剧情与功能交织】在同一固定主角与同一场景内，将卖点融入连续动作链（握持→体验→情绪反应），每镜 " +
@@ -1934,20 +2072,20 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
               "s，禁止跳切 unrelated 场景。";
           } else {
             narrativePhase =
-              "【第二幕：暴力奇观铺陈】每镜 " +
+              "【第二幕：生理-环境-产品链】每镜 " +
               STYLE_C_DUR_MIN +
               "–" +
               STYLE_C_DUR_MAX +
-              "s，以物理/UI 极限测试与 Match Cut 铺陈卖点，audio 须咬合 ASMR 破坏声。";
+              "s；以「环境失控→生理反应→产品触发」快剪链铺陈卖点，至少本批一半镜为 `[感官碎片]`，禁止产品说明书连拍。";
           }
         } else {
           if (isStyleA) {
             narrativePhase =
-              "【第三幕：末镜 Hero 定格】本批若含全片最后一镜，【仅此一镜】允许产品全貌/核心 Hero 定格；此前各镜仍禁止整体轮廓。其余镜维持 " +
+              "【第三幕：隐喻收束与 Hero 定格】本批若含末镜，【仅此一镜】允许产品 Hero 全貌；此前镜须维持 `[隐喻空镜]` 与产品切片交替，每镜 " +
               STYLE_A_DUR_MIN +
               "–" +
               STYLE_A_DUR_MAX +
-              "s 极慢微观或拉焦。";
+              "s。";
           } else if (isStyleB) {
             narrativePhase =
               "【第三幕：情绪高潮与品牌落幅】在固定场景内完成情绪释放与 Hero 定格，每镜 " +
@@ -1961,7 +2099,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
               STYLE_C_DUR_MIN +
               "–" +
               STYLE_C_DUR_MAX +
-              "s，最高密度 Whip Pan/砸击/宫格阵列，重低音+清脆 ASMR 合一，Hero 可在暴力交互中定格。";
+              "s；最高密度 `[感官碎片]` + Whip Pan/砸击/宫格阵列，Hero 产品须在生理/环境连锁反应中定格，禁止孤立产品说明书收尾。";
           }
         }
 
@@ -2055,6 +2193,10 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
             }
 
             currentShots = currentShots.concat(tempStyleObj.shots);
+            styleObj.shots = currentShots;
+
+            // 断点实时渲染：本幕 Batch 解析并入 shots 后立即上屏，不等待循环结束
+            flushPartialStoryboardToScreen(batchCount);
 
             if (tempStyleObj.shots.length === 0) {
               console.warn("[批次断流] " + styleCfg.name + " 第 " + batchCount + " 批返回 0 镜，继续下一批接力。");
@@ -2172,6 +2314,14 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
           setStoryEngineProgress(styleCfg.name + " 正在物理校准总时长…", 78 + (typeof styleIndex === "number" ? styleIndex : 0) * 6);
           autoAdjustDuration(styleObj, targetMin, targetMax, styleCfg, p);
         }
+
+        try {
+          delete styleObj._generating;
+        } catch (eGen) {
+          styleObj._generating = void 0;
+        }
+        liveResults[styleIndex] = styleObj;
+        window.__LAST_STORYBOARD_DATA__ = liveResults;
 
         return styleObj;
       } catch (e) {
@@ -2387,16 +2537,28 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
   }
 
   function buildStoryboardPanelHtml(style, sIdx) {
+    if (!style || typeof style !== "object") style = { shots: [] };
     if (typeof sIdx !== "number" || isNaN(sIdx)) sIdx = 0;
     const rawShots = style.shots || style.content || style.list || style.Shots || [];
-    const shots = Array.isArray(rawShots) ? rawShots : [];
+    const shots = Array.isArray(rawShots)
+      ? rawShots.filter(function (sh) {
+          return sh && typeof sh === "object";
+        })
+      : [];
     var totalSec = 0;
     shots.forEach(function (sh) {
       totalSec += parseInt(sh.duration, 10) || 0;
     });
 
     var treatment = style.director_treatment != null ? String(style.director_treatment) : "";
-    var html =
+    var html = "";
+    if (style._generating) {
+      html +=
+        '<div style="margin-bottom:12px;padding:10px 12px;border:1px dashed var(--blue);border-radius:8px;background:rgba(0,80,200,0.06);font-size:0.82rem;color:#444;line-height:1.45;">' +
+        "⏳ 本套分镜仍在后台生成中，后续幕次将自动解锁并追加到时间轴…" +
+        "</div>";
+    }
+    html +=
       '<div class="dna-card" style="margin-bottom:12px; padding:12px; border:1px solid var(--blue); border-radius:8px; background:rgba(0,80,200,0.04);">' +
       '<div style="font-size:0.7rem; color:var(--blue); font-weight:bold;">DIRECTOR TREATMENT / 导演阐述</div>' +
       '<div style="font-size:0.85rem; margin-top:6px; white-space:pre-wrap;">' +
@@ -2532,7 +2694,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
     modsTarget.innerHTML = "";
     var hasAny = false;
     styles.forEach(function (style, idx) {
-      if (!style) return;
+      if (!style || !Array.isArray(style.shots) || !style.shots.length) return;
       hasAny = true;
       var opt = document.createElement("option");
       opt.value = String(idx);
@@ -2669,15 +2831,30 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
     bindStoryboardRedrawDelegation();
   }
 
-  function renderStoryboardDashboard(data) {
+  function renderStoryboardDashboard(data, opts) {
+    opts = opts || {};
+    var incrementalPartial = !!opts.incrementalPartial;
     const dashboard = document.getElementById("storyDashboard");
     const panels = document.getElementById("tabPanels");
     const tabBtns = document.querySelectorAll(".tab-btn");
     if (!dashboard || !panels) return;
 
+    try {
     const styles =
-      (data != null && data.styles) || (Array.isArray(data) ? data : []);
+      (data != null && data.styles) ||
+      (Array.isArray(data) && data.length ? data : null) ||
+      (Array.isArray(window.__LAST_STORYBOARD_DATA__) ? window.__LAST_STORYBOARD_DATA__ : []);
+
     if (!Array.isArray(styles) || styles.length === 0) {
+      if (incrementalPartial) return;
+      return alert("AI 未返回有效分镜数据，请重试");
+    }
+
+    var hasRenderable = styles.some(function (s) {
+      return s && Array.isArray(s.shots) && s.shots.length > 0;
+    });
+    if (!hasRenderable) {
+      if (incrementalPartial) return;
       return alert("AI 未返回有效分镜数据，请重试");
     }
 
@@ -2685,33 +2862,53 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
 
     dashboard.classList.add("is-visible");
     dashboard.setAttribute("aria-hidden", "false");
-    panels.innerHTML = "";
+
+    var isIncremental = panels.querySelector(".tab-panel") != null;
+    if (!isIncremental) {
+      panels.innerHTML = "";
+    }
 
     tabBtns.forEach(function (btn, idx) {
-      btn.style.display = styles[idx] ? "inline-block" : "none";
-      if (styles[idx]) {
-        btn.textContent = styles[idx].styleName || "Style " + (idx + 1);
+      var st = styles[idx];
+      if (st && Array.isArray(st.shots) && st.shots.length) {
+        btn.style.display = "inline-block";
+        var label = st.styleName || "Style " + (idx + 1);
+        if (st._generating) label += " …生成中";
+        btn.textContent = label;
+      } else if (!isIncremental) {
+        btn.style.display = "none";
       }
     });
 
     styles.forEach(function (style, sIdx) {
-      if (!style) return;
-      var panel = document.createElement("div");
-      panel.className = "tab-panel " + (sIdx === 0 ? "is-active" : "");
-      panel.id = "panel-" + sIdx;
+      if (!style || !Array.isArray(style.shots) || !style.shots.length) return;
+      var panel = document.getElementById("panel-" + sIdx);
+      if (!panel) {
+        panel = document.createElement("div");
+        panel.className = "tab-panel";
+        panel.id = "panel-" + sIdx;
+        panels.appendChild(panel);
+      }
       panel.innerHTML = buildStoryboardPanelHtml(style, sIdx);
-      panels.appendChild(panel);
     });
 
-    tabBtns.forEach(function (btn, idx) {
-      btn.classList.toggle("is-active", idx === 0 && styles[0]);
-      btn.setAttribute("aria-selected", idx === 0 && styles[0] ? "true" : "false");
-    });
+    if (!isIncremental) {
+      tabBtns.forEach(function (btn, idx) {
+        btn.classList.toggle("is-active", idx === 0 && styles[0]);
+        btn.setAttribute("aria-selected", idx === 0 && styles[0] ? "true" : "false");
+      });
+      var firstPanel = document.getElementById("panel-0");
+      if (firstPanel) firstPanel.classList.add("is-active");
+    }
 
     syncStoryboardModsDropdown(styles);
     bindStoryboardTabHandlers();
     bindStoryboardRedrawDelegation();
     attachGridInteractivity();
+    } catch (renderErr) {
+      if (!incrementalPartial) throw renderErr;
+      console.warn("[renderStoryboardDashboard] 半成品渐进渲染跳过:", renderErr);
+    }
   }
 
   /** 精修返回后：补全漏写的 audio / lighting（不覆盖已有非空内容） */
