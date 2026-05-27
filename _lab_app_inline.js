@@ -1488,11 +1488,50 @@
           : "⚠️ 风险：" + RISK_TAG + (detail ? "（" + detail + "）" : "");
       }
 
+      var WEAR_ON_RE = /(戴上|佩戴|穿上)/;
+      var WEAR_OFF_RE = /(摘下|取下|脱下)/;
+      var INTERNAL_EXPOSE_RE = /(后盖|透底|内衬|机芯|内部)/;
+      var PHYSICAL_BREAK_MSG = "物理穿帮（产品已佩戴，无法展示背部或内部特征，请修改动线）";
+
+      function markPhysicalWearBreak(shot) {
+        var cc = String(shot.continuity_check || "").trim();
+        if (cc.indexOf("物理穿帮") !== -1) return;
+        shot.continuity_check = cc
+          ? "⚠️ 风险：" + PHYSICAL_BREAK_MSG + "。" + cc
+          : "⚠️ 风险：" + PHYSICAL_BREAK_MSG + "。";
+      }
+
+      function advanceWearState(text, worn) {
+        var t = String(text || "");
+        if (WEAR_OFF_RE.test(t)) return false;
+        if (WEAR_ON_RE.test(t)) return true;
+        return worn;
+      }
+
+      var productWorn = false;
       var i;
-      for (i = 1; i < shots.length; i++) {
-        var prev = shots[i - 1];
-        var cur = shots[i];
-        if (!prev || !cur) continue;
+      for (i = 0; i < shots.length; i++) {
+        var shot = shots[i];
+        if (!shot) continue;
+
+        if (i > 0) {
+          var prev = shots[i - 1];
+          var cur = shot;
+          if (!prev || !cur) continue;
+
+          if (productWorn) {
+            var curVisWear = String(cur.visual || "");
+            var startMWear = String(cur.start_motion || cur.motion || "");
+            var currentShotHasTakeOffAction =
+              WEAR_OFF_RE.test(curVisWear) || WEAR_OFF_RE.test(startMWear);
+            // 豁免：如果本镜头同时伴随“摘下/脱下”的动作，则允许展示内部/后盖
+            if (
+              !currentShotHasTakeOffAction &&
+              (INTERNAL_EXPOSE_RE.test(curVisWear) || INTERNAL_EXPOSE_RE.test(startMWear))
+            ) {
+              markPhysicalWearBreak(cur);
+            }
+          }
 
         var prevVis = String(prev.visual || "");
         var curVis = String(cur.visual || "");
@@ -1551,6 +1590,11 @@
           );
           markContinuityRisk(cur, detail);
         }
+        }
+
+        var wearChunk =
+          String(shot.visual || "") + " " + String(shot.end_motion || shot.motion || "");
+        productWorn = advanceWearState(wearChunk, productWorn);
       }
     }
 
@@ -1765,15 +1809,16 @@
           " 镜）】；若总长约 15s，全篇最多 3–4 镜，其中至少 " +
           minMetaphorBrollShots +
           " 镜必须是隐喻空镜！\n" +
-          "【悬念到底死命令】除全片【最后一镜】Hero 定格外，所有 `[产品触发镜]` 仅允许局部切片/边缘光/微观肌理，【绝对禁止】产品全貌或整体轮廓！\n" +
-          "【视觉死命令】运镜【只能】Slow Dolly In 或 Rack Focus；隐喻空镜与产品切片交替编排，每镜换一个视角，禁止连续两镜拍同一产品部位。\n" +
-          "打光：高对比 Rim Light / Scan Light，客观克制。\n";
+          "【悬念锁死命令】：本风格的灵魂是「藏」！在脚本的前 30% 进度中，【绝对禁止】展示产品的全貌！只能通过极端的微距（Macro）、抽象的局部轮廓、在黑暗中被边缘光（Rim Light）勾勒出的剪影来呈现。产品全景必须作为视觉高潮，保留到后半段才能释出。\n" +
+          "【拒绝微距死循环】：严禁连续 3 个镜头都在产品表面进行微距平移！必须严格遵循「产品局部微观 ⇄ 自然/工业隐喻空镜」的交替法则。\n" +
+          "【视觉死命令】运镜【只能】Slow Dolly In、Rack Focus 或 Slow Pull Back；隐喻空镜与产品切片严格交替，每镜换一个视角，禁止连续两镜拍同一产品部位。\n" +
+          "【光影剥离法则】高对比 Rim Light / Scan Light 剥离形体——暗调中只留轮廓与材质高光，客观克制，用光影「藏」与「露」控制悬念节奏。\n";
       } else if (isStyleB) {
         adaptiveStyleRuleBlock =
           "【本套执行 · Style B (Human/Lifestyle - 微电影级连贯叙事)】\n" +
           stylePhysicalIsolationBlock +
           "【第一镜 · 正面强制动作】第一镜【必须且只能】聚焦于主角出场或环境氛围建立（如主角的特写动作、场景的空间感）。禁止在第一镜硬塞产品展示。产品必须作为剧情道具在后续自然介入。\n" +
-          "核心精神：人物情绪变化、固定场景、连续动作。\n" +
+          "核心精神：人物情绪弧线、固定主场景内的【真实生活/商务动线】、连续可承接的物理动作——绝不是围着产品转圈的产品说明书！\n" +
           "【镜头节奏死命令】影视级叙事节奏，每一镜 `duration` 必须在 " +
           STYLE_B_DUR_MIN +
           "–" +
@@ -1785,9 +1830,11 @@
           "–" +
           maxNodes +
           " 镜）。\n" +
-          "【动作连贯死命令】必须在 director_treatment 中写明 1 名【固定主角】+ 1 个【固定主场景】。前后镜头必须是同一套动作的顺滑延续（例：镜1主角伸手 → 镜2主观视角手握住产品），禁止生硬跳切 unrelated 画面。\n" +
-          "  - 第二镜起产品/服务作为推动情绪的「道具」介入；实体/软实体用具体物理交互与高级生活痕迹（暖调窗光、逆光、Cinematic Bokeh）。\n" +
-          "  - 虚拟/服务：屏幕内容仅以过肩或眼中倒影出现；空间与时间绝对连贯。\n";
+          "【动作连贯死命令】必须在 director_treatment 中写明 1 名【固定主角】+ 1 个【固定主场景】+ 一条清晰的【动线时间轴】（起势互动 → 状态转化 → 动线延展收束）。前后镜头必须是同一套动作的顺滑延续（例：镜1案前沉思把玩 → 镜2佩戴整装 → 镜3走向落地窗 → 镜4抬腕看表时的自信情绪），禁止生硬跳切 unrelated 画面。\n" +
+          "  - 第二镜起产品/服务作为推动情绪的「道具」介入；卖点须嵌入具体生活动作（整理袖口、推门、抬腕、举杯），禁止连续 3 镜以上主角定在原地只把玩产品。\n" +
+          "  - 虚拟/服务：屏幕内容仅以过肩或眼中倒影出现；空间与时间绝对连贯。\n" +
+          "【物理状态锁死命令】佩戴类/穿戴类产品（腕表、珠宝、服饰、鞋帽等）一旦在镜头中被「佩戴/戴上/穿上」，【绝对禁止】在后续镜头中出现无法被观众看到的部位（如腕表透底后盖、机芯、服装内衬、鞋内结构）！除非 `visual`/`motion` 中明确写出「摘下」「取下」「脱下」或「翻转表背/翻开内衬」等可看见背面的动作。\n" +
+          "【拒绝枯燥摆拍，强制行为动线】严禁让主角定在原地连续 3 个镜头只把玩/端详产品！必须设计真实的生活/商务动线（例：案前沉思把玩 → 佩戴整装 → 走向落地窗/准备出门 → 抬腕看表时的自信情绪）。每一个卖点必须极其自然地融入上述【生活动作】，而非旁白式功能罗列。\n";
       } else {
         adaptiveStyleRuleBlock =
           "【本套执行 · Style C (Sensory - 极致快剪与感官反应)】\n" +
@@ -1795,7 +1842,7 @@
           antiProductOnlyMandateBlock +
           "【第一镜 · 正面强制动作】第一镜【必须且只能】是【非产品本体】的感官碎片：环境失控（震波涟漪、霓虹狂闪、玻璃震颤）或人类生理反应（瞳孔骤缩、皮肤战栗），也可以是极度暴力的物理交互破局；禁止静止产品全貌。\n" +
           "核心精神：高频次转场、物理极限测试、ASMR 听觉轰炸——产品只是触发感官风暴的「开关」，不是每一镜的主角！\n" +
-          "【破局指令 · 反产品说明书】严禁只对产品进行物理破坏式摆拍！必须穿插【人类生理反应】与【环境失控】的感官碎片，形成「反应 → 触发 → 产品」的剪辑链！\n" +
+          "【反产品说明书死刑线】：全片如果高达 30-50 个镜头，直接展示产品的镜头【绝对不允许超过总数的 30%】！剩下的 70% 必须全部是【不含产品的感官奇观】（如：纯粹的瞳孔震颤、纯粹的水杯碎裂、纯粹的音波震荡）。严禁拿产品在镜头前晃来晃去！如果连续 2 个镜头都在展示产品不同角度，将被视为重大生产事故！\n" +
           "【镜头强制要求 · 感官碎片】至少 " +
           minMetaphorBrollShots +
           " 镜（≥40%）必须是「非产品本体」画面，单镜 " +
@@ -1826,7 +1873,15 @@
           maxNodes +
           " 镜）！\n" +
           "【暴力奇观死命令】产品相关镜必须伴随环境/生理连锁反应（砸击→涟漪→皮肤战栗→产品残影），禁止孤立的产品破坏特写连发；虚拟类用 UI 爆破、弹窗砸击、数据残影，同样须穿插「用户生理/环境反馈」碎片。\n" +
-          "【音效死命令】每一镜 `audio` 必须咬合重低音下潜或极其清脆的 ASMR 物理破坏声，生理镜须有呼吸/心跳/耳鸣等近场 foley。高潮可闪现宫格阵列。\n";
+          "【音效死命令】每一镜 `audio` 必须咬合重低音下潜或极其清脆的 ASMR 物理破坏声，生理镜须有呼吸/心跳/耳鸣等近场 foley。高潮可闪现宫格阵列。\n" +
+          "【无限制扩容法则】：当镜头数量庞大时，【绝对禁止】死守单一场景或人物！你拥有无限预算：1. 疯狂加人（不同身份面孔）；2. 疯狂换景（多维空间跳跃）；3. 疯狂加辅助意象（自然现象/工业毁坏等）。\n" +
+          "🚨【品牌定位绝对服从锁】：你的所有『换人、换景、加辅助意象』的操作，【绝对不允许】违背当前传入的『产品定位 (" +
+          positioningStr +
+          ")』！\n" +
+          "- 若定位是【高奢/顶奢】：扩展场景只能是私人美术馆/极简高定后台/深邃抽象空间；人物必须是克制优雅的高智感面孔，严禁市井、泥泞或廉价感！\n" +
+          "- 若定位是【科技先锋】：扩展场景必须是无尘实验室/赛博都市/数据流空间；辅助意象用液态金属/电流/机械矩阵。\n" +
+          "- 若定位是【大众消费/年轻潮酷】：才能使用街头、派对等烟火气浓重的鲜活场景。\n" +
+          "每一次视觉跳跃，都必须用极其契合品牌定位的美学去严格包装！\n";
       }
 
       var priorityWeightDeclaration =
@@ -2035,24 +2090,28 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         } else {
           batchBlueprintStr = "【单素材变奏】：仅1张图。请运用极度微距、光影切换或人物遮挡等手段制造画面差异。";
         }
+        if (isStyleC) {
+          batchBlueprintStr +=
+            "\n🚨【Style C 极速跳跃死命令】：你现在的任务是制造视觉风暴！如果不知道写什么，立刻【换人】、【换场景】、【加微剧情】！本批次中，你必须在『 [不同人物的极致情绪/肢体] ⇄ [毫不相干的多维空间/环境异象] ⇄ [极其克制的产品一瞥] ⇄ [抽象的辅助意象蒙太奇] 』之间疯狂横跳！【绝对不允许】连续 3 个镜头停留在同一个物理空间，绝不许重复同一种生理反应！";
+        }
 
         // --- 2. 动态构建大厂商业片三幕剧锚点（确保全部紧扣产品本体，从结构上彻底拉开雷同度） ---
         var narrativePhase = "";
         if (batchCount === 1) {
           if (isStyleA) {
             narrativePhase =
-              "【第一幕：隐喻悬念起幅】本批每镜 " +
+              "【第一幕：迷局与暗示】本批每镜 " +
               STYLE_A_DUR_MIN +
               "–" +
               STYLE_A_DUR_MAX +
-              "s，仅 Slow Dolly In / Rack Focus。第一镜必须是【非产品】隐喻空镜（墨滴/日食/自然奇观）；本批至少一半镜头为 `[隐喻空镜]`，其余为产品局部切片，【全部】禁止产品全貌。在 visual 开头标注 `[隐喻空镜]` 或 `[产品触发镜]`。";
+              "s，仅 Slow Dolly In / Rack Focus。只能出现隐喻空镜和产品极小局部的微距特写（如一丝反光、一个倒影），整体画面保持极简和深邃的暗调；【绝对禁止】产品全貌。在 visual 开头标注 `[隐喻空镜]` 或 `[产品触发镜]`。";
           } else if (isStyleB) {
             narrativePhase =
-              "【第一幕：微电影起幅】本批每镜 duration 必须 " +
+              "【第一幕：环境与情绪起幅】交代环境与情绪基调；固定主角出场或空间氛围建立，并与产品产生初步互动（把玩/凝视/轻触），禁止第一镜硬塞产品全貌。本批每镜 duration 必须 " +
               STYLE_B_DUR_MIN +
               "–" +
               STYLE_B_DUR_MAX +
-              "s。第一镜：固定主角出场或环境氛围；禁止第一镜硬塞产品。本批内镜头须写成同一动作链的顺滑延续（伸手→握持→使用），产品从第二镜起作剧情道具介入。";
+              "s。须为后续动线埋下伏笔（案前、窗前、门厅等），禁止连续 3 镜原地把玩产品。";
           } else {
             narrativePhase =
               "【第一幕：感官碎片起幅】本批每镜 " +
@@ -2064,14 +2123,14 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         } else if (batchCount === 2) {
           if (isStyleA) {
             narrativePhase =
-              "【第二幕：隐喻与卖点交织】本批每镜 " +
+              "【第二幕：解构与质感】本批每镜 " +
               STYLE_A_DUR_MIN +
               "–" +
               STYLE_A_DUR_MAX +
-              "s；继续 `[隐喻空镜]` 与自然奇观堆叠卖点暗示（速度→流体/光爆，材质→冰川/丝绸），产品仅局部切片，【禁止】全貌。";
+              "s；镜头开始缓慢推进，光影开始流动（如 Scan Light 扫过），展示材质的极致工艺，隐喻元素开始与产品产生视觉共鸣（如水波纹叠化到金属拉丝）。产品仍仅局部切片，【禁止】全貌。";
           } else if (isStyleB) {
             narrativePhase =
-              "【第二幕：剧情与功能交织】在同一固定主角与同一场景内，将卖点融入连续动作链（握持→体验→情绪反应），每镜 " +
+              "【第二幕：状态转化与功能】本批必须发生明确的「状态转化」（戴上/穿上/启动/整装），配合特写展示核心功能；佩戴类产品在已佩戴后【禁止】展示后盖/透底/内衬/机芯等穿帮画面，除非动作写明摘下或翻转。同一固定主角与同一场景内，卖点融入连续动作链，每镜 " +
               STYLE_B_DUR_MIN +
               "–" +
               STYLE_B_DUR_MAX +
@@ -2087,14 +2146,14 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         } else {
           if (isStyleA) {
             narrativePhase =
-              "【第三幕：隐喻收束与 Hero 定格】本批若含末镜，【仅此一镜】允许产品 Hero 全貌；此前镜须维持 `[隐喻空镜]` 与产品切片交替，每镜 " +
+              "【第三幕：全貌释出】本批若含末镜，彻底打破悬念，利用宏大的打光和极慢的后退运镜（Slow Pull Back）展现产品极具压迫感和奢华感的全貌 Hero 定格；此前镜须维持 `[隐喻空镜]` 与产品切片交替，每镜 " +
               STYLE_A_DUR_MIN +
               "–" +
               STYLE_A_DUR_MAX +
               "s。";
           } else if (isStyleB) {
             narrativePhase =
-              "【第三幕：情绪高潮与品牌落幅】在固定场景内完成情绪释放与 Hero 定格，每镜 " +
+              "【第三幕：动线延展与情绪升华】动作延展与情绪升华（准备出发、走向落地窗、抬腕看表、迎接挑战等），通过真实生活/商务动线收尾展示全貌，【禁止】原地呆坐连拍。在固定场景内完成情绪释放与 Hero 定格，每镜 " +
               STYLE_B_DUR_MIN +
               "–" +
               STYLE_B_DUR_MAX +
@@ -2124,6 +2183,18 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
             shotsToRequest +
             " 镜将被判定为生产事故！仅输出合法 JSON。";
         } else if (batchCount > 1 && lastShotContext) {
+          if (isStyleA) {
+            batchBlueprintStr +=
+              "\n🛑【高冷防连拍】：上一镜的画面是「" +
+              lastShotContext.visual +
+              "」。如果上一镜是微距产品局部，本镜请务必切向一个高质感的【隐喻空镜】；如果上一镜是隐喻，本镜请回到产品。同时，【绝对禁止】复用前文已经出现过的隐喻元素（例如前面用过水、冰，后面就只能用光影、几何或粉末等其他元素），必须保持视觉新鲜感！";
+          }
+          if (isStyleC) {
+            batchBlueprintStr +=
+              "\n🛑【时空强制刷新锁】：上一镜是「" +
+              lastShotContext.visual +
+              "」。本镜【必须】彻底切换物理空间或更换出场人物！如果上一镜是室内，这镜就切室外/抽象空间；如果上一镜是局部，这镜就切群像大景；如果上一镜出现了产品，这镜【绝对禁止】再提产品，必须用其他辅助元素或群演反应来推进张力！";
+          }
           var deficit = targetNodes - currentShots.length;
           var pastVisuals = currentShots
             .map(function (s, idx) {
@@ -3378,7 +3449,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
     var runToken = Date.now();
     window.__VISUAL_RENDER_TOKEN = runToken;
 
-    var delayMs = 20000;
+    var delayMs = 8000;
 
     return new Promise(function (resolve) {
       var idx = 0;
