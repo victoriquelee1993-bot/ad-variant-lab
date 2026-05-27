@@ -995,11 +995,11 @@
       return /style\s*c\b/i.test(nm);
     }
 
-    /** Style C：普通单镜不得超过 2.5s；宫格/分屏/阵列镜豁免（可承载更长秒数） */
+    /** Style C：普通单镜不得超过 3.5s；宫格/分屏/阵列/蒙太奇镜豁免（可承载更长秒数） */
     function assertStyleCShotDurationLimit(shots, phase) {
-      var maxSec = 2.5;
+      var maxSec = 3.5;
       var bad = [];
-      var GRID_VISUAL_CAP_RE = /宫格|分屏|阵列/;
+      var GRID_VISUAL_CAP_RE = /宫格|分屏|阵列|蒙太奇|快剪|闪回/;
       var si;
       for (si = 0; si < shots.length; si++) {
         if (!shots[si]) continue;
@@ -1039,13 +1039,13 @@
       }
 
       var styleC = isStyleCFastCut(styleOpts);
-      var STYLE_C_SHOT_CAP_SEC = 2.5;
+      var STYLE_C_SHOT_CAP_SEC = 3.5;
 
       // 🛑 核心修正：注释或删掉校准前的 assertStyleCShotDurationLimit 断言！
       // 允许 AI 原始输出秒数溢出，交由下方的弹性缩放和强行取整算法进行平滑重塑。
       // if (styleC) assertStyleCShotDurationLimit(shots, "校准前");
 
-      var GRID_VISUAL_CAP_RE = /宫格|分屏|阵列/;
+      var GRID_VISUAL_CAP_RE = /宫格|分屏|阵列|蒙太奇|快剪|闪回/;
 
       if (styleC) {
         var styleCMaxTotal = roundDurD(shots.length * STYLE_C_SHOT_CAP_SEC);
@@ -1071,8 +1071,8 @@
         var vis = String(shot && shot.visual != null ? shot.visual : "");
         // 宫格/分屏/阵列镜头统一允许较长秒数（Style C 也必须豁免，吸收总时长）
         if (GRID_VISUAL_CAP_RE.test(vis)) return hi * 0.5;
-        // 普通快剪镜头死卡 2.5s
-        if (styleC) return 2.5;
+        // 普通快剪镜头死卡 3.5s
+        if (styleC) return 3.5;
         return 5;
       }
 
@@ -1317,11 +1317,24 @@
         var sidRaw = shots[i].source_image_id;
         if (sidRaw === null || sidRaw === "null") {
           vis = collapseSpaces(vis);
-          if (!/\(纯隐喻\/情绪空镜\)/.test(vis)) {
-            vis = (vis ? vis + " " : "") + "(纯隐喻/情绪空镜)";
+          var sName = String(styleObj.styleName || "").toLowerCase();
+          var isStyleB = sName.indexOf("style b") !== -1;
+          var isStyleC = sName.indexOf("style c") !== -1;
+
+          var tag = isStyleB ? "(人物生活/情绪特写)" : isStyleC ? "(视觉奇观/节奏缓冲)" : "(纯隐喻/情绪空镜)";
+          var fallback = isStyleB
+            ? "捕捉人物真实的生活细节与情绪微表情，增强微电影代入感。"
+            : isStyleC
+              ? "强烈的视觉特效或环境异象，作为高潮间的节奏缓冲。"
+              : "静谧隐喻或情绪空镜，以氛围与意象承载叙事。";
+
+          vis = vis.replace(/\(纯隐喻\/情绪空镜\)/g, "").trim();
+          if (vis.indexOf(tag) === -1) {
+            vis = (vis ? vis + " " : "") + tag;
           }
-          if (vis.replace(/\(纯隐喻\/情绪空镜\)/g, "").trim().length < 8) {
-            vis = "静谧隐喻或情绪空镜，以氛围与意象承载叙事。(纯隐喻/情绪空镜)";
+          var visCore = vis.replace(tag, "").replace(/[()（）]/g, "").trim();
+          if (visCore.length < 8) {
+            vis = fallback + " " + tag;
           }
           shots[i].visual = vis;
           if (shots[i].audio != null) {
@@ -1626,9 +1639,9 @@
       var STYLE_A_DUR_MAX = 6.0;
       var STYLE_B_DUR_MIN = 2.0;
       var STYLE_B_DUR_MAX = 4.0;
-      var STYLE_C_DUR_MIN = 0.5;
-      var STYLE_C_DUR_MAX = 1.5;
-      var STYLE_C_SHOT_SEC = 1.0;
+      var STYLE_C_DUR_MIN = 1.5;
+      var STYLE_C_DUR_MAX = 3.0;
+      var STYLE_C_SHOT_SEC = 2.0;
 
       var avgShotLen = 3.0;
       if (isStyleC) {
@@ -1644,9 +1657,9 @@
       var minNodes = Math.max(4, targetNodes - 2);
       var maxNodes = Math.min(20, targetNodes + 3);
       if (isStyleC) {
-        minNodes = Math.max(18, Math.ceil(targetMin / STYLE_C_DUR_MAX));
-        targetNodes = Math.max(24, Math.ceil(targetMax / avgShotLen));
-        maxNodes = Math.min(55, Math.ceil(targetMax / STYLE_C_DUR_MIN));
+        minNodes = Math.max(8, Math.ceil(targetMin / STYLE_C_DUR_MAX));
+        targetNodes = Math.max(12, Math.ceil(dynamicTargetDur / avgShotLen));
+        maxNodes = Math.min(25, Math.floor(targetMax / STYLE_C_DUR_MIN));
       } else if (isStyleA) {
         minNodes = Math.max(3, Math.ceil(targetMin / STYLE_A_DUR_MAX));
         targetNodes = Math.max(3, Math.round(dynamicTargetDur / avgShotLen));
@@ -1820,19 +1833,50 @@
         dynamicPacingBlock +=
           "👉 【Style C 视觉风暴管线】：全片 " +
           targetNodes +
-          " 镜，每镜 " +
+          " 镜，每段分镜(Node)时长 " +
           STYLE_C_DUR_MIN +
           "–" +
           STYLE_C_DUR_MAX +
-          "s；【必须高频展示产品】且每次出场须带强烈动势（禁止静态摆拍）；须基于 brief 构建极端卖点测试场景（防水→巨浪、防摔→陨石撞击等）；Dutch Angle + Crash Zoom + Whip Pan 贯穿全片。少于 " +
-          minNodes +
-          " 镜视为生产事故！\n";
+          "s。🚨【蒙太奇打包铁律】：虽然是极速快剪，但【切勿】将0.5秒的碎片拆分成独立的镜头输出！请使用【快剪蒙太奇/闪回/多宫格】的形式，将3-4个极速碎片合并写在【同一个】镜头描述里承载这2-3秒时长；Dutch Angle + Whip Pan 贯穿。\n";
       }
+
+      // 1. 剧情外推引擎
+      var narrativeExtrapolationBlock =
+        "【剧情与人物外推引擎 (Narrative Extrapolation)】\n" +
+        "⚠️ 当用户提供的卖点极少不足以支撑目标时长时，【绝对禁止】通过反复堆砌同质化特写来“水时长”！你必须自发进行剧情外推：\n" +
+        "- Style A(极简)：外推更深邃宏大的哲学隐喻（如用艺术留白填补时长）。\n" +
+        "- Style B(生活流)：反推目标受众画像，虚构一个完整的微电影情境。用真实的人际互动、生活动线来丰满剧本，让产品自然融入。\n" +
+        "- Style C(视觉风暴)：引入多身份使用者在多时空的混剪，用丰富的叙事场景代替重复画面。\n\n";
+
+      // 2. 自适应剪辑节奏与呼吸感
+      var totalDurAvg = (targetMin + targetMax) / 2;
+      var pacingStrategy = "";
+      if (totalDurAvg <= 18) {
+        pacingStrategy =
+          "【超短TVC极速策略 (15s)】：总时长极短！必须开门见山，压缩情绪铺垫。单镜以 0.8s-1.5s 为主，剔除无效空镜，卖点高频轰炸！";
+      } else if (totalDurAvg <= 35) {
+        pacingStrategy =
+          "【标准广告策略 (30s)】：标准的商业节奏。开场1-2镜给足 2s-3s 建立氛围，中段卖点紧凑快剪 (1s-1.5s)，结尾回放情绪留白。";
+      } else {
+        pacingStrategy =
+          "【微电影/长叙事策略 (45s-60s+)】：总时长充裕！必须拥有强烈的剧情或视觉起伏。允许插入大量 3s-5s 的情绪大远景或生活流，严禁全程使用短碎片快剪把观众晃晕！";
+      }
+      var dynamicRhythmBlock =
+        "⏱️【剪辑呼吸感与动态节奏铁律 (Dynamic Rhythm)】：\n" +
+        pacingStrategy +
+        "\n" +
+        "1. 绝对禁止将所有镜头 duration 填成一模一样的平均数（拒绝极值和死板的机械节奏）。\n" +
+        "2. 根据【叙事张力】自由分配单镜时长（情绪远景给足3-5s，局部特效压缩至0.8-1.5s）。\n" +
+        "3. 确保所有镜头的 duration 累加落在 " +
+        targetMin +
+        "s - " +
+        targetMax +
+        "s 之间即可，请拼凑出租完美的错落呼吸感！\n\n";
 
       const systemPrompt = `${priorityWeightDeclaration}你是一位轴线逻辑强悍、精通 4A 大厂全套提案心法的顶级 TVC 广告片导演。
 你的唯一任务是：基于用户输入的行业、产品、卖点、平台、画幅与定位，为本套风格定制一套可独立上线的 Client-ready 分镜脚本。你必须先完成「实体类别推断」，再严格执行下方本套 Style 的跨品类自适应规则。
 
-${globalCoreRulesBlock}【架构红线约束 (Redline Constraints)】
+${globalCoreRulesBlock}${narrativeExtrapolationBlock}${dynamicRhythmBlock}【架构红线约束 (Redline Constraints)】
 1. 风格物理隔离：遵守本套 Style 的镜头节奏与视听边界，请勿混入另外两套风格的运镜速度、单镜时长或叙事手法。
 2. 风格差异化：${isStyleA ? "Style A 须保持先锋装置艺术与静谧隐喻空镜，必须避免写实生活场景与产品说明书堆砌。" : isStyleC ? "Style C 须高频展示产品并配合极端动效与卖点夸张场景，请勿使用静态摆拍。" : "Style B 须以人物生活流为主（≥80%），产品仅作道具自然出镜，不符合本风格范式的是电视购物式硬广与「截肢手」画面。"}
 3. 卖点聚焦：本套提案须紧扣产品本体与用户具体卖点，视听视角须与另外两套风格（若存在）可区分。
@@ -1872,7 +1916,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
       var currentShots = [];
       var batchSize = 6; // 安全区：单批 6 镜，降低 JSON 截断与指令遗忘风险
       var batchCount = 0;
-      var maxBatches = isStyleC ? 12 : Math.ceil(targetNodes / batchSize) + 2;
+      var maxBatches = Math.ceil(targetNodes / batchSize) + 2;
       var lastShotContext = null;
 
       function styleBatchProgressPct(doneShots) {
@@ -2008,7 +2052,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
 
           if (isStyleA) {
             batchBlueprintStr +=
-              "如果上一镜是微距产品局部，本镜必须切向一个高质感的【隐喻空镜】；如果上一镜是隐喻，本镜请回到产品。绝对禁止复用前文已经出现过的隐喻元素！";
+              "如果上一镜是微距产品局部，本镜可切向高质感的【隐喻空镜】。🛑【统一意象铁律】：全片的隐喻空镜必须死死咬住【同一个】核心视觉主题（如：开篇是冰川，后续空镜必须是冰霜演变）。绝对禁止在同一支片子里像幻灯片一样切换毫无关联的场景！必须保持极简且统一的高级美学基调。";
           } else if (isStyleB) {
             batchBlueprintStr +=
               "如果上一镜出现了产品，且目标总时长 > 30s，接下来 2-3 镜请专注于人物生活流；如果是短视频(≤30s)，允许隔 1 镜后产品再次自然入镜，但必须变换互动方式。请把注意力集中在【人】的具体生活动作（如走向窗边、看向后视镜）上。";
