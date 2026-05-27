@@ -1768,80 +1768,24 @@
           "在 `director_treatment` 中须明示：① 核心装置艺术隐喻词典（至少 3 组）；② 逐镜标注 `[隐喻空镜]` 或 `[产品触发镜]`。\n\n";
       }
 
-      var positioningAlignmentLock =
-        "🚨【品牌定位绝对服从锁】：无论本套的艺术化（A）/生活流（B）/破坏感（C）表达，人物气质、场景质感、光影密度【必须 100% 绝对服从】当前传入的产品定位（" +
-        positioningStr +
-        "），绝不允许产生品牌调性灾难。\n";
-
       var adaptiveStyleRuleBlock = "";
       if (isStyleA) {
-        adaptiveStyleRuleBlock =
-          "【本套执行 · Style A (Installation Art - 先锋装置艺术 / 极简超现实)】\n" +
-          stylePhysicalIsolationBlock +
-          antiProductOnlyMandateBlock +
-          "【第一镜 · 正面强制动作】第一镜【必须且只能】是静谧宏大的【非产品】装置艺术隐喻空镜（巨大日食背景、无边际平静水面、极地冰川纹理等），严禁写实生活场景、人物情绪与产品全貌。\n" +
-          "【核心视觉】画面必须呈现美术馆级别的「先锋装置艺术」。【绝对禁止】写实生活场景，【绝对禁止】夸张的物理破坏与人类情绪表演。\n" +
-          "【构图置景】强制使用大面积留白（Negative Space）。产品必须像神圣文物一样，放置在抽象的几何展台（黑曜石方块、纯白圆柱）上，或处于无重力悬浮状态。\n" +
-          "【视听隐喻】极慢的探针镜头（Probe Lens Dolly In）、克制的边缘光（Rim Light）。隐喻必须是静谧且宏大的（巨大日食、无边水面、极地冰川、极昼光晕）。\n" +
-          "【镜头节奏死命令】极静、极慢！每一镜 `duration` 必须在 " +
-          STYLE_A_DUR_MIN +
-          "–" +
-          STYLE_A_DUR_MAX +
-          "s。本套须精准产出 " +
-          targetNodes +
-          " 镜（" +
-          minNodes +
-          "–" +
-          maxNodes +
-          " 镜）。前 30% 进度【绝对禁止】产品全貌，仅允许局部轮廓/剪影；末镜 Slow Pull Back 释出 Hero 全貌。\n" +
-          "【交替法则】严禁连续 3 镜产品表面微距平移！必须严格遵循「产品局部微观 ⇄ 静谧宏大隐喻空镜」交替。\n" +
-          "【运镜死命令】仅允许 Probe Lens Dolly In、Rack Focus、Slow Pull Back；禁止 Whip Pan、快切、人物剧情。\n" +
-          positioningAlignmentLock;
-      } else if (isStyleB) {
-        adaptiveStyleRuleBlock =
-          "【本套执行 · Style B (Life Flow - 绝对生活流 / 去硬广化微电影)】\n" +
-          stylePhysicalIsolationBlock +
-          "【第一镜 · 正面强制动作】第一镜【必须且只能】是纯生活场景建立（人物面部情绪、环境氛围、生活细节），【绝对禁止】出现产品或硬广式展示。\n" +
-          "【主角与道具法则】这是真正的微电影！【人】是绝对的主角，产品只是日常生活中的普通【道具】。全片 80% 的画面必须是人物面部情绪、生活动线或生活细节，只有 20% 允许产品自然出镜。\n" +
-          "【严禁截肢型硬广】【绝对不允许】出现「画面特写产品，旁边硬生生伸出一只手/半个人」的低级画面！产品只能「被遗忘在桌角」、「被漫不经心拿起」、「人物走动时一闪而过的佩戴」。\n" +
-          "【三幕剧情锁】起（纯生活场景建立，不提产品）→ 承（产品作为道具自然介入动作，如随手拿起，【严禁】描写产品特写/材质）→ 合（人物情绪收尾，产品可自然同框但非说明书式）。\n" +
-          "【镜头节奏死命令】每一镜 `duration` 必须在 " +
-          STYLE_B_DUR_MIN +
-          "–" +
-          STYLE_B_DUR_MAX +
-          "s。本套须精准产出 " +
-          targetNodes +
-          " 镜（" +
-          minNodes +
-          "–" +
-          maxNodes +
-          " 镜）。\n" +
-          "【动作连贯死命令】director_treatment 须写明 1 名【固定主角】+ 1 个【固定主场景】+ 生活动线；前后镜头须为同一套生活动作的顺滑延续，禁止生硬跳切 unrelated 画面。\n" +
-          "【物理状态锁死命令】佩戴类产品一旦「佩戴/戴上/穿上」，后续【禁止】展示无法被观众看到的部位（后盖/透底/内衬/机芯），除非动作写明「摘下/翻转」。\n" +
-          positioningAlignmentLock;
-      } else {
-        adaptiveStyleRuleBlock =
-          "【本套执行 · Style C (Visual Storm - 夸张卖点与视觉风暴)】\n" +
-          stylePhysicalIsolationBlock +
-          "【第一镜 · 正面强制动作】第一镜必须是基于卖点的【极端测试场景】或【带强烈动势的产品出场】（被掷下、在水花中穿梭、陨石撞击旁掠过），【绝对禁止】静止产品全貌摆拍。\n" +
-          "【核心视觉】产品是「引爆能量的炸弹」！【必须高频展示产品】，但【绝对禁止】静态摆拍！产品每次出场必须带有强烈物理动势（被掷下、在水花中穿梭、Crash Zoom 砸向镜头）。\n" +
-          "【基于卖点的视效夸张】必须根据前端 brief（卖点）构建好莱坞大片级极端测试场景。例：防水→深海暗流/滔天巨浪；坚固防摔→陨石撞击/火花四溅工业撞击；轻薄透气→龙卷风/切割音障。\n" +
-          "【构图与节奏】强制 Dutch Angle（荷兰角）、Ultra Wide Angle（超广角透视变形）；画面塞满飞溅碎片、粉末或爆裂霓虹光。运镜必须是 Crash Zoom、Whip Pan、极速推拉。\n" +
-          "【镜头节奏死命令】每一镜 `duration` 必须 " +
-          STYLE_C_DUR_MIN +
-          "–" +
-          STYLE_C_DUR_MAX +
-          "s（宫格/阵列除外）。本套须精准产出 " +
-          targetNodes +
-          " 镜（" +
-          minNodes +
-          "–" +
-          maxNodes +
-          " 镜）。\n" +
-          "【生理反应伴随】产品镜须时刻伴随瞳孔收缩、流汗、皮肤战栗等极端生理反应或环境连锁反馈，禁止孤立说明书式产品特写。\n" +
-          "【音效死命令】每一镜 `audio` 须咬合重低音下潜、ASMR 物理破坏声或工业撞击 foley。\n" +
-          positioningAlignmentLock;
+        adaptiveStyleRuleBlock +=
+          "\n【静态视觉护城河】：画面必须呈现美术馆级别的「先锋装置艺术」。【绝对禁止】写实生活场景，【绝对禁止】夸张的物理破坏与人类情绪。\n【构图置景】：强制使用大面积留白（Negative Space）。产品必须像神圣文物一样，放置在抽象的几何展台（如黑曜石方块、纯白圆柱）上，或处于无重力悬浮状态。\n【视听隐喻】：极慢的探针镜头（Probe Lens Dolly In）、克制的边缘光。隐喻必须是静谧且宏大的（如：巨大日食背景、无边际平静水面、极地冰川）。";
       }
+      if (isStyleB) {
+        adaptiveStyleRuleBlock +=
+          "\n【主角与道具法则】：这是真正的微电影！【人】是绝对的主角，产品只是日常生活中的普通【道具】。全片 80% 的画面必须是人物面部情绪、生活动线或生活细节，只有 20% 允许产品自然出镜。\n【严禁截肢型硬广】：【绝对不允许】出现“画面特写产品，旁边硬生生伸出一只手/半个人”的低级画面！产品只能“被遗忘在桌角”、“被漫不经心拿起”、“人物走动时一闪而过的佩戴”。";
+      }
+      if (isStyleC) {
+        adaptiveStyleRuleBlock +=
+          "\n【核心视觉】：产品是「引爆能量的炸弹」！【必须高频展示产品】，但【绝对禁止】静态摆拍！产品的每次出场必须带有强烈物理动势。\n【基于卖点的视效夸张】：必须根据前端简报构建极端场景（如：防水->深海暗流/滔天巨浪；防摔->陨石/工业撞击；轻薄->龙卷风）。\n【构图与节奏】：强制使用极端的荷兰角、超广角透视变形，画面塞满飞溅碎片或爆裂霓虹光。运镜必须极速推拉（Crash Zoom）、甩镜头（Whip Pan）。";
+      }
+      // 🚨 定位安全锁 (确保不出现品牌调性灾难)
+      adaptiveStyleRuleBlock +=
+        "\n🚨【定位安全锁】：无论任何风格，其人物气质、场景质感【必须 100% 绝对服从】传入的产品定位（" +
+        positioningStr +
+        "），绝不允许产生违和的画面！";
 
       var priorityWeightDeclaration =
         "【指令权重申明 · 最高执行判定】以下关于三大风格（Style A/B/C）的【第一镜/开场动作】设定，具有超越任何「平台常规展现逻辑」的最高优先级！无论用户选择什么投放平台，绝对禁止使用「直接展示产品全貌」这种庸俗的开场来覆盖风格自身的艺术设定。\n\n";
@@ -2051,75 +1995,22 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
 
         // --- 2. 动态构建大厂商业片三幕剧锚点（确保全部紧扣产品本体，从结构上彻底拉开雷同度） ---
         var narrativePhase = "";
-        if (batchCount === 1) {
-          if (isStyleA) {
+        if (isStyleB) {
+          if (batchCount === 1)
+            narrativePhase = "【第一幕：起】纯生活场景建立，主角在做自己的事，完全不要提产品。";
+          else if (batchCount === 2)
             narrativePhase =
-              "【第一幕：装置艺术起幅】本批每镜 " +
-              STYLE_A_DUR_MIN +
-              "–" +
-              STYLE_A_DUR_MAX +
-              "s，仅 Probe Lens Dolly In / Rack Focus。只能出现静谧宏大的 `[隐喻空镜]`（日食/无边水面/极地冰川）与产品极小局部（几何展台/无重力悬浮下的边缘光剪影）；【绝对禁止】写实生活场景、人物情绪与产品全貌。标注 `[隐喻空镜]` 或 `[产品触发镜]`。";
-          } else if (isStyleB) {
+              "【第二幕：承】主角的剧情遇到转折，产品作为道具极其自然地介入动作（如随手拿起），严禁描写产品特写或材质。";
+          else
             narrativePhase =
-              "【第一幕：纯生活起幅】本批建立纯生活场景与人物情绪（面部、动线、环境细节），【绝对禁止】提及产品或硬广式展示。每镜 " +
-              STYLE_B_DUR_MIN +
-              "–" +
-              STYLE_B_DUR_MAX +
-              "s。第一镜必须是人物/环境，产品零出镜。";
-          } else {
-            narrativePhase =
-              "【第一幕：卖点风暴起幅】本批每镜 " +
-              STYLE_C_DUR_MIN +
-              "–" +
-              STYLE_C_DUR_MAX +
-              "s。第一镜须是基于 brief 的极端测试场景或带强烈动势的产品出场（禁止静态摆拍）；本批须高频穿插产品与 Dutch Angle/Crash Zoom/Whip Pan。标注镜型。";
-          }
-        } else if (batchCount === 2) {
-          if (isStyleA) {
-            narrativePhase =
-              "【第二幕：装置与材质】本批每镜 " +
-              STYLE_A_DUR_MIN +
-              "–" +
-              STYLE_A_DUR_MAX +
-              "s；Probe Lens 缓慢推进，Scan Light 扫过抽象展台上的产品局部；隐喻空镜与产品切片严格交替（日食/水面 ⇄ 几何展台局部），【禁止】全貌与写实场景。";
-          } else if (isStyleB) {
-            narrativePhase =
-              "【第二幕：道具自然介入】产品作为生活道具自然介入（随手拿起、桌角被遗忘、走动时一闪而过），【严禁】产品特写/材质描写与「截肢手」硬广。同一主角同一场景内生活动线延续，每镜 " +
-              STYLE_B_DUR_MIN +
-              "–" +
-              STYLE_B_DUR_MAX +
-              "s。";
-          } else {
-            narrativePhase =
-              "【第二幕：卖点极限测试】本批每镜 " +
-              STYLE_C_DUR_MIN +
-              "–" +
-              STYLE_C_DUR_MAX +
-              "s；根据 brief 铺陈极端测试场景（防水→巨浪、防摔→陨石/火花、轻薄→龙卷风）；高频产品出场须带动势，伴随生理反应，禁止静态说明书连拍。";
-          }
-        } else {
-          if (isStyleA) {
-            narrativePhase =
-              "【第三幕：全貌释出】本批若含末镜，Slow Pull Back 从装置艺术空间释出产品 Hero 全貌（几何展台/无重力悬浮 + 宏大 Rim Light）；此前维持 `[隐喻空镜]` 与产品切片交替，每镜 " +
-              STYLE_A_DUR_MIN +
-              "–" +
-              STYLE_A_DUR_MAX +
-              "s。";
-          } else if (isStyleB) {
-            narrativePhase =
-              "【第三幕：情绪合】人物情绪收尾（生活动线延续、环境推进），产品可自然同框但非说明书式 Hero 定帧；禁止原地呆坐与硬广特写。每镜 " +
-              STYLE_B_DUR_MIN +
-              "–" +
-              STYLE_B_DUR_MAX +
-              "s，动作链须与前一镜顺滑衔接。";
-          } else {
-            narrativePhase =
-              "【第三幕：视觉总爆】每镜 " +
-              STYLE_C_DUR_MIN +
-              "–" +
-              STYLE_C_DUR_MAX +
-              "s；最高密度极端测试 + Whip Pan/Crash Zoom/宫格阵列；Hero 产品须在动势与生理/环境连锁中定格，禁止孤立静态收尾。";
-          }
+              "【第三幕：合】情绪收尾，展现人物达到自信/放松状态，产品随人物自然存在于画面中。";
+        } else if (isStyleA) {
+          if (batchCount === 1)
+            narrativePhase = "【第一幕：迷局暗示】仅限隐喻空镜与产品极小局部的微距，整体保持极简深邃。";
+          else if (batchCount === 2)
+            narrativePhase = "【第二幕：解构质感】光影流动，展示材质极致工艺，隐喻元素与产品产生视觉共鸣。";
+          else
+            narrativePhase = "【第三幕：全貌释出】彻底打破悬念，极慢后退运镜展现产品极具压迫感和奢华感的全貌。";
         }
 
         var currentSystemPrompt = systemPrompt;
@@ -2137,23 +2028,20 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
             shotsToRequest +
             " 镜将被判定为生产事故！仅输出合法 JSON。";
         } else if (batchCount > 1 && lastShotContext) {
+          batchBlueprintStr +=
+            "\n🛑【动态防连拍死锁】：\n上一镜的画面是：「" +
+            lastShotContext.visual +
+            "」。\n";
+
           if (isStyleA) {
             batchBlueprintStr +=
-              "\n🛑【装置艺术防连拍】：上一镜是「" +
-              lastShotContext.visual +
-              "」。若上一镜是产品局部/展台，本镜切静谧宏大 `[隐喻空镜]`；若上一镜是隐喻，本镜回到几何展台产品局部。【禁止】复用已出现隐喻元素（水/冰→须换光影/几何/粉末），【禁止】写实生活场景！";
-          }
-          if (isStyleB) {
+              "如果上一镜是微距产品局部，本镜必须切向一个高质感的【隐喻空镜】；如果上一镜是隐喻，本镜请回到产品。绝对禁止复用前文已经出现过的隐喻元素！";
+          } else if (isStyleB) {
             batchBlueprintStr +=
-              "\n🛑【防硬广打断锁】：上一镜是「" +
-              lastShotContext.visual +
-              "」。若上一镜出现了产品，接下来【连续 3 个镜头绝对禁止】再提产品！必须写主角接下来的具体生活动作或环境推进（面部情绪、动线、生活细节），严禁「截肢手」硬广与产品特写！";
-          }
-          if (isStyleC) {
+              "如果上一镜已经出现了产品，接下来的连续 3 个镜头【绝对禁止】再提产品！必须去写主角接下来的具体生活动作（比如他走向窗边、他看向后视镜）。把你的注意力集中在【人】身上！";
+          } else if (isStyleC) {
             batchBlueprintStr +=
-              "\n🛑【动态刷新锁】：上一镜是「" +
-              lastShotContext.visual +
-              "」。即使连续写产品，也【绝对禁止】同景别同运镜！上一镜是局部特写，本镜必须 Crash Zoom 拉开切夸张全景或 POV，并伴随瞳孔收缩/流汗等极端生理反应；须切换极端测试场景维度（室内→巨浪/陨石/龙卷风等）！";
+              "本镜允许继续描写产品，但【绝对禁止】使用相同的景别和运镜！如果上一镜是产品的极速特写，这镜必须拉开切夸张全景或第一人称视角（POV）！并时刻伴随人物瞳孔收缩、流汗等极端生理反应！";
           }
           var deficit = targetNodes - currentShots.length;
           var pastVisuals = currentShots
