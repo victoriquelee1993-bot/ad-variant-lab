@@ -416,7 +416,7 @@
     return null;
   }
 
-  /** 通用纠偏：基于景别/动作语义与 Vision 标签的一致性 */
+  /** 通用纠偏：基于景别/动作语义与 Vision 标签的一致性（仅调整 source_image_id，不改写 visual 创意文本） */
   function universalAssetCorrection(shot, meta) {
     if (!shot || !meta) return;
     var vis = String(shot.visual || "");
@@ -425,13 +425,11 @@
     if (!intent) return;
 
     if (intent === "DETAIL_MACRO" && cls === "ESTABLISHING") {
-      shot.visual = vis.replace(/细节|特写|微距/g, "全景呈现");
       var altMacro = findGalleryIndexByUniversalClass("DETAIL_MACRO");
       if (altMacro != null && shot.source_image_id != null) shot.source_image_id = altMacro;
     }
 
     if (intent === "ESTABLISHING" && cls === "DETAIL_MACRO") {
-      shot.visual = vis.replace(/全景|远景|环境|氛围/g, "局部质感");
       var altEst = findGalleryIndexByUniversalClass("ESTABLISHING");
       if (altEst != null && shot.source_image_id != null) shot.source_image_id = altEst;
     }
@@ -441,9 +439,7 @@
       if (altHero != null && shot.source_image_id != null) shot.source_image_id = altHero;
     }
 
-    vis = String(shot.visual || "");
     if (/操作|演示/.test(vis) && cls !== "INTERACTIVE") {
-      shot.visual = vis.replace(/操作|演示/g, "静态展示");
       var altInt = findGalleryIndexByUniversalClass("INTERACTIVE");
       if (altInt != null && shot.source_image_id != null) shot.source_image_id = altInt;
       return;
@@ -534,6 +530,7 @@
           apiKey: apiKey,
           body: JSON.stringify({
             model: window.getTextModel(),
+            max_tokens: 4096,
             messages: [{ role: "user", content: content }],
             response_format: { type: "json_object" },
           }),
@@ -754,16 +751,13 @@
     var s = String(raw || "")
       .replace(/```json\s*|```/gi, "")
       .trim();
-    // 核心优化：去除可能干扰 JSON 的嵌套转义引号
-    s = s.replace(/\\"/g, "");
 
-    var jsonMatch = s.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("AI 返回了非 JSON 格式内容");
-
+    var jsonStr = extractOutermostJsonBlock(s);
+    if (!jsonStr) throw new Error("AI 返回了非 JSON 格式内容");
     try {
-      return JSON.parse(jsonMatch[0]);
+      return JSON.parse(jsonStr);
     } catch (e) {
-      return parseJsonWithClosingBraceRepair(jsonMatch[0]);
+      return parseJsonWithClosingBraceRepair(jsonStr);
     }
   }
 
@@ -867,19 +861,6 @@
   async function generateThreeStyleStoryboards(p, key, onStyleReady) {
     setStoryEngineProgress("分镜引擎启动：将依次处理 Style A / B / C…", 1);
 
-    const files = typeof window.__getStoryboardImageFiles === "function" ? window.__getStoryboardImageFiles() : [];
-    const base64Images = [];
-    for (let i = 0; i < Math.min(files.length, 6); i++) {
-      if (isProductVideoFile(files[i])) continue;
-      base64Images.push(await fileToCompressedBase64(files[i]));
-    }
-    if (base64Images.length > 0) {
-      setStoryEngineProgress(
-        "👁️ 已载入 " + base64Images.length + " 张产品参考图，导演将「看着图」写分镜…",
-        3
-      );
-    }
-
     const n = Number(p.materialCount) || 0;
 
     /** 通用景别标签 → 目录可读简称（与 normalizeUniversalVisualClass 同源） */
@@ -913,6 +894,10 @@
         if (featLine.length > 160) featLine = featLine.slice(0, 157) + "…";
         materialCatalogLines.push("#" + (mi + 1) + ": [" + clsLabel + "] " + featLine);
       }
+      setStoryEngineProgress(
+        "👁️ 已载入 " + catalogSlotCount + " 张素材目录元数据，导演将依据 Vision 预扫描写分镜…",
+        3
+      );
     }
     const gridHint =
       (catalogSlotCount > 0
@@ -920,7 +905,7 @@
           catalogSlotCount +
           " 张图 (#1～#" +
           catalogSlotCount +
-          ")。请在每镜 source_image_id 中填整数序号；**不要**在 visual 正文写 # 或「素材格」。\n" +
+          ")。请在展示产品的镜头中填写对应的 source_image_id (整数序号)。\n" +
           materialCatalog +
           "【素材目录】（data-visual-class 为通用景别锚点 ESTABLISHING/HERO_SHOT/DETAIL_MACRO/INTERACTIVE；须与 visual 景别交叉比对后再填 source_image_id；单行摘要：" +
           materialCatalogLines.join("；") +
@@ -929,7 +914,7 @@
           materialCatalogLines.join("\n") +
           "\n"
         : "【素材索引】无图；source_image_id 可统一填 1。\n") +
-      "【JSON 输出备忘录】顶层 director_treatment + shots；每镜 visual（纯中文）、motion（可选）、source_image_id、duration（物理秒数，严禁 duration_weight）；禁止无产品前摇。\n" +
+      "【JSON 输出备忘录】顶层 director_treatment + visualDNA（提取产品的核心材质、工艺或物理特征作为 visualDNA，如：磨砂黑钛金属、流光丝绸）+ shots；每镜 visual（纯中文）、motion（可选）、source_image_id、duration（必须是绝对整数的物理秒数，严禁小数，严禁 duration_weight）；禁止无产品前摇。\n" +
       (catalogSlotCount > 0 ? "【素材调度】共 " + catalogSlotCount + " 张，请按语义分配 1～" + catalogSlotCount + "，勿机械顺子。\n" : "") +
       "\n";
 
@@ -1029,14 +1014,14 @@
           return "镜头#" + b.idx + "=" + b.dur + "s";
         })
         .join("，");
-      throw new Error(
-        "Style C 极速快剪时长违规（" +
+      console.warn(
+        "[assertStyleCShotDurationLimit] Style C 极速快剪时长违规（" +
           phase +
           "）：普通单镜严禁超过 " +
           maxSec +
           "s，检测到：" +
           detail +
-          "。请重写分镜，禁止用长镜头凑总时长。"
+          "。系统将继续执行，请检查分镜是否用长镜头凑总时长。"
       );
     }
 
@@ -1088,7 +1073,7 @@
         if (GRID_VISUAL_CAP_RE.test(vis)) return hi * 0.5;
         // 普通快剪镜头死卡 2.5s
         if (styleC) return 2.5;
-        return 8;
+        return 5;
       }
 
       function stripWeights() {
@@ -1106,7 +1091,8 @@
        * 工业级重构：整数时长最终形态（彻底杜绝无意义的补帧与机械横跳）
        */
       function enforceIntegerDuration() {
-        var INT_MIN_SHOT = 1;
+        var INT_MIN_SHOT = styleC ? 0.5 : 1;
+        var DUR_STEP = styleC ? 0.5 : 1;
         var si;
         var intLo = Math.ceil(lo);
         var intHi = Math.floor(hi);
@@ -1119,15 +1105,16 @@
         function sumIntegerTotal() {
           var s = 0;
           for (si = 0; si < shots.length; si++) {
-            s += parseInt(shots[si].duration, 10) || 0;
+            s += parseFloat(shots[si].duration) || 0;
           }
-          return s;
+          return styleC ? roundDurD(s) : Math.round(s);
         }
 
-        // 1. 首次取整
+        // 1. 首次取整（Style C 支持 0.5s 颗粒度）
         for (si = 0; si < shots.length; si++) {
           if (!shots[si]) continue;
-          var rd = Math.round(parseFloat(shots[si].duration) || 0);
+          var raw = parseFloat(shots[si].duration) || 0;
+          var rd = styleC ? Math.round(raw * 2) / 2 : Math.round(raw);
           var capSi = Math.floor(shotMaxDurationCap(shots[si]));
           shots[si].duration = Number(Math.max(INT_MIN_SHOT, Math.min(capSi, rd)));
         }
@@ -1141,15 +1128,15 @@
           var trimIdx = -1;
           var trimDur = -1;
           for (si = 0; si < shots.length; si++) {
-            var td = parseInt(shots[si].duration, 10) || 0;
-            if (td <= INT_MIN_SHOT) continue;
+            var td = parseFloat(shots[si].duration) || 0;
+            if (td <= INT_MIN_SHOT + 0.001) continue;
             if (td > trimDur) {
               trimDur = td;
               trimIdx = si;
             }
           }
           if (trimIdx < 0) break;
-          shots[trimIdx].duration = Number(shots[trimIdx].duration) - 1;
+          shots[trimIdx].duration = Number(roundDurD((parseFloat(shots[trimIdx].duration) || 0) - DUR_STEP));
           total = sumIntegerTotal();
         }
 
@@ -1161,13 +1148,13 @@
           var maxHeadroom = -1;
 
           for (si = 0; si < shots.length; si++) {
-            var curD = parseInt(shots[si].duration, 10) || 0;
+            var curD = parseFloat(shots[si].duration) || 0;
             var capD = Math.floor(shotMaxDurationCap(shots[si]));
             var headroom = capD - curD;
 
             var visText = String(shots[si].visual || "").toLowerCase();
             var isComplexMotion = /orbit|dolly|focus|traverse|绕拍|推拉|拉焦/i.test(visText);
-            if (isComplexMotion) headroom += 2;
+            if (isComplexMotion) headroom += styleC ? 1 : 2;
 
             if (headroom > maxHeadroom && curD < capD) {
               maxHeadroom = headroom;
@@ -1178,7 +1165,7 @@
           if (expIdx < 0) {
             if (shots.length) {
               var lastIdx = shots.length - 1;
-              var curLastD = parseInt(shots[lastIdx].duration, 10) || 0;
+              var curLastD = parseFloat(shots[lastIdx].duration) || 0;
               var lastCap = Math.floor(shotMaxDurationCap(shots[lastIdx]));
               if (curLastD >= lastCap) {
                 if (styleC) {
@@ -1186,13 +1173,13 @@
                 }
                 break;
               }
-              shots[lastIdx].duration = Number(curLastD + 1);
-              total++;
+              shots[lastIdx].duration = Number(roundDurD(curLastD + DUR_STEP));
+              total = sumIntegerTotal();
             } else {
               break;
             }
           } else {
-            shots[expIdx].duration = Number(shots[expIdx].duration) + 1;
+            shots[expIdx].duration = Number(roundDurD((parseFloat(shots[expIdx].duration) || 0) + DUR_STEP));
             total = sumIntegerTotal();
           }
         }
@@ -1294,37 +1281,13 @@
       for (i = 0; i < shots.length; i++) totFinal += parseFloat(shots[i].duration) || 0;
       totFinal = roundDurD(totFinal);
       if (styleC && totFinal < lo - 0.02) {
-        var capSum = roundDurD(shots.length * STYLE_C_SHOT_CAP_SEC);
-        if (capSum >= lo - 0.02) {
-          for (i = 0; i < shots.length; i++) {
-            if (GRID_VISUAL_CAP_RE.test(String(shots[i].visual || ""))) continue;
-            shots[i].duration = STYLE_C_SHOT_CAP_SEC;
-          }
-          totFinal = 0;
-          for (i = 0; i < shots.length; i++) totFinal += parseFloat(shots[i].duration) || 0;
-          totFinal = roundDurD(totFinal);
-          if (totFinal > hi + 0.02) {
-            var sc = hi / totFinal;
-            totFinal = 0;
-            for (i = 0; i < shots.length; i++) {
-              shots[i].duration = roundDurD(
-                Math.min(shotMaxDurationCap(shots[i]), (parseFloat(shots[i].duration) || 0) * sc)
-              );
-              totFinal += shots[i].duration;
-            }
-            totFinal = roundDurD(totFinal);
-          }
-        }
-        if (totFinal < lo - 0.02) {
-          console.warn(
-            "剧情信息量不足以支撑目标时长，已自动扩展至最高承载剧情段落（Style C 校准后总长 " +
-              totFinal +
-              "s < 目标下限 " +
-              lo +
-              "s，将在整数校准阶段补足终章镜头）。"
-          );
-        }
-        if (styleC) assertStyleCShotDurationLimit(shots, "校准后");
+        console.warn(
+          "剧情信息量不足以支撑目标时长，已自动扩展至最高承载剧情段落（Style C 校准后总长 " +
+            totFinal +
+            "s < 目标下限 " +
+            lo +
+            "s，将在整数校准阶段补足终章镜头）。"
+        );
       }
 
       enforceIntegerDuration();
@@ -1350,6 +1313,22 @@
         });
         vis = vis.replace(/(?:参考|动态)素材格[^)]*\)/g, "");
         vis = collapseSpaces(vis);
+
+        var sidRaw = shots[i].source_image_id;
+        if (sidRaw === null || sidRaw === "null") {
+          vis = collapseSpaces(vis);
+          if (!/\(纯隐喻\/情绪空镜\)/.test(vis)) {
+            vis = (vis ? vis + " " : "") + "(纯隐喻/情绪空镜)";
+          }
+          if (vis.replace(/\(纯隐喻\/情绪空镜\)/g, "").trim().length < 8) {
+            vis = "静谧隐喻或情绪空镜，以氛围与意象承载叙事。(纯隐喻/情绪空镜)";
+          }
+          shots[i].visual = vis;
+          if (shots[i].audio != null) {
+            shots[i].audio = collapseSpaces(String(shots[i].audio || ""));
+          }
+          continue;
+        }
 
         var k = parseInt(shots[i].source_image_id, 10);
         if (isNaN(k) || k < 1) k = 1;
@@ -1481,11 +1460,12 @@
       }
 
       function markContinuityRisk(shot, detail) {
-        var cc = String(shot.continuity_check || "").trim();
-        if (cc.indexOf("跳轴风险") !== -1 || cc.indexOf(RISK_TAG) !== -1) return;
-        shot.continuity_check = cc
-          ? "⚠️ 风险：" + RISK_TAG + (detail ? "（" + detail + "）" : "") + " " + cc
-          : "⚠️ 风险：" + RISK_TAG + (detail ? "（" + detail + "）" : "");
+        console.warn(
+          "[validateContinuity] ⚠️ 风险：" +
+            RISK_TAG +
+            (detail ? "（" + detail + "）" : ""),
+          { visual: shot && shot.visual, start_motion: shot && (shot.start_motion || shot.motion) }
+        );
       }
 
       var WEAR_ON_RE = /(戴上|佩戴|穿上)/;
@@ -1494,11 +1474,10 @@
       var PHYSICAL_BREAK_MSG = "物理穿帮（产品已佩戴，无法展示背部或内部特征，请修改动线）";
 
       function markPhysicalWearBreak(shot) {
-        var cc = String(shot.continuity_check || "").trim();
-        if (cc.indexOf("物理穿帮") !== -1) return;
-        shot.continuity_check = cc
-          ? "⚠️ 风险：" + PHYSICAL_BREAK_MSG + "。" + cc
-          : "⚠️ 风险：" + PHYSICAL_BREAK_MSG + "。";
+        console.warn("[validateContinuity] ⚠️ 风险：" + PHYSICAL_BREAK_MSG, {
+          visual: shot && shot.visual,
+          start_motion: shot && (shot.start_motion || shot.motion),
+        });
       }
 
       function advanceWearState(text, worn) {
@@ -1586,9 +1565,8 @@
               " 第 " +
               (i + 1) +
               " 镜衔接风险（前一镜 end_motion → 本镜 start_motion）：",
-            { prevIndex: i, shotIndex: i + 1, end_motion: endM, start_motion: startM, continuity_check: contCheck }
+            { prevIndex: i, shotIndex: i + 1, end_motion: endM, start_motion: startM, continuity_check: contCheck, detail: detail }
           );
-          markContinuityRisk(cur, detail);
         }
         }
 
@@ -1682,6 +1660,7 @@
         targetNodes = Math.max(targetNodes, Math.ceil(dynamicTargetDur / avgShotLen));
         maxNodes = Math.min(22, Math.floor(targetMax / STYLE_B_DUR_MIN));
       }
+      targetNodes = Math.min(targetNodes, maxNodes);
 
       setStoryEngineProgress(
         styleCfg.name + " 正在生成，当前时长匹配目标镜头数: " + targetNodes + " 镜...",
@@ -1709,7 +1688,7 @@
 
       // 2. 🛑 画幅构图约束（将用户选择的 Ratio 强力注入镜头描述，防止出图画幅拉伸崩塌）
       var aspectCompositionRule =
-        "【画布大小构图死命令】：当前画布大小为【" +
+        "【画布构图约束】：当前画布大小为【" +
         ratioStr +
         "】。你在描述视觉元素陈设时，必须完全对齐该画布的物理重心：\n" +
         "- 若为 9:16 / 4:5（竖屏），视觉元素必须纵向居中堆叠分布，多用 Pedestal（垂直升降）运镜，注意画面上下留白；\n" +
@@ -1717,12 +1696,12 @@
 
       // 3. 🛑 三套完全平等、皆可独立上线、全行业通用的 4A 级平行创意大纲
       var dynamicCreativeAngle =
-        "【核心投放平台】：🚨 " +
+        "【核心投放平台】：" +
         platformStr +
-        " 🚨\n" +
-        "【当前画布大小】：📐 " +
+        "\n" +
+        "【当前画布大小】：" +
         ratioStr +
-        " 📐\n" +
+        "\n" +
         "【产品定位约束】：💎 当前产品定位为【" +
         positioningStr +
         "】。你必须让全片的场景奢华度、画面色调、演员调性、灯光高级感完全匹配该定位！如果是高奢，用无菌克制的高级打光与冷色调；如果是大众消费，注重亲和力与高饱满色彩。\n" +
@@ -1730,14 +1709,14 @@
         categoryLabelForStyle +
         "】行业的【" +
         productLabelForStyle +
-        "】。须结合下方「实体类别推断」结果提取本品类视觉隐喻，严禁生搬其它行业套路。\n\n" +
+        "】。须结合下方「实体类别推断」结果提取本品类视觉隐喻，请避免生搬其它行业套路。\n\n" +
         platformHookRule +
         "\n" +
         aspectCompositionRule +
         "\n\n";
 
       var adaptiveEntityMappingBlock =
-        "【前置死命令：跨品类自适应转换器 · Adaptive Entity Mapping】\n" +
+        "【前置核心原则：跨品类自适应转换器 · Adaptive Entity Mapping】\n" +
         "在生成分镜前，你必须首先根据用户输入的产品名、类目、简报与卖点，判断其属于以下哪一类实体，并严格按照该类别的视觉隐喻执行本套风格（写入 director_treatment 首句须明示类别）：\n" +
         "1. [硬实体]（如 3C 数码、家电、汽车）：强调工业材质、精密结构、物理反馈。\n" +
         "2. [软实体/日化]（如美妆、食品、服饰）：强调流体/粉末质感、肌肤触感、色彩张力。\n" +
@@ -1745,13 +1724,13 @@
         "4. [无形服务/平价物]（如保险、物流、日用百货）：将概念具象化（排版、几何图形隐喻安全/效率），或对平价物进行极其夸张的质感升格。\n\n";
 
       var stylePhysicalIsolationBlock =
-        "【绝对物理隔离 · 本套 Style 视听防火墙】\n" +
-        "你当前仅允许执行本套 Style 的物理法则，与另外两套风格【零交叉、零借用】：\n" +
+        "【风格物理隔离 · 本套 Style 视听边界】\n" +
+        "你当前仅允许执行本套 Style 的物理法则，与另外两套风格保持清晰区分：\n" +
         (isStyleA
-          ? "- 【隔离禁令】严禁写实生活场景、人物情绪表演、物理破坏、Whip Pan、Match Cut、快切、微电影叙事、ASMR 砸击；你的世界是「先锋装置艺术 + 极简超现实 + Probe Lens 极慢探针 + 大面积留白」。\n"
+          ? "- 【风格边界】请避免写实生活场景、人物情绪表演、物理破坏、Whip Pan、Match Cut、快切、微电影叙事、ASMR 砸击；你的世界是「先锋装置艺术 + 极简超现实 + Probe Lens 极慢探针 + 大面积留白」。\n"
           : isStyleB
-            ? "- 【隔离禁令】严禁 Style A 式装置艺术空镜堆叠；严禁 Style C 式荷兰角/碎剪/极端破坏测试；严禁电视购物式产品特写与「截肢手」硬广；你的世界是「人物生活流 + 产品作道具 + 2–4s 呼吸镜」。\n"
-            : "- 【隔离禁令】严禁 Style A 式 3.5s+ 慢镜悬念与美术馆置景；严禁 Style B 式舒缓长叙事与去动效生活流；严禁产品静态摆拍或说明书式连拍；你的世界是「高频产品 + 极端动效 + Dutch Angle/Crash Zoom/Whip Pan 视觉风暴」。\n");
+            ? "- 【风格边界】请避免 Style A 式装置艺术空镜堆叠；请避免 Style C 式荷兰角/碎剪/极端破坏测试；请避免电视购物式产品特写与「截肢手」硬广；你的世界是「人物生活流 + 产品作道具 + 2–4s 呼吸镜」。\n"
+            : "- 【风格边界】请避免 Style A 式 3.5s+ 慢镜悬念与美术馆置景；请避免 Style B 式舒缓长叙事与去动效生活流；请避免产品静态摆拍或说明书式连拍；你的世界是「高频产品 + 极端动效 + Dutch Angle/Crash Zoom/Whip Pan 视觉风暴」。\n");
 
       var minMetaphorBrollShots = Math.max(1, Math.ceil(targetNodes * 0.4));
       var maxDirectProductShots = Math.max(1, targetNodes - minMetaphorBrollShots);
@@ -1759,7 +1738,7 @@
       var antiProductOnlyMandateBlock = "";
       if (isStyleA) {
         antiProductOnlyMandateBlock =
-          "【反说明书死命令 · Style A 装置艺术管线】\n" +
+          "【反说明书核心原则 · Style A 装置艺术管线】\n" +
           "本套不是产品说明书！至少 " +
           minMetaphorBrollShots +
           " 镜（≥全片 40%）必须是「非产品本体」的静谧宏大隐喻空镜（日食、无边水面、极地冰川等）；产品 `[触发镜]` 不得超过 " +
@@ -1771,46 +1750,45 @@
       var adaptiveStyleRuleBlock = "";
       if (isStyleA) {
         adaptiveStyleRuleBlock +=
-          "\n【静态视觉护城河】：画面必须呈现美术馆级别的「先锋装置艺术」。【绝对禁止】写实生活场景，【绝对禁止】夸张的物理破坏与人类情绪。\n【构图置景】：强制使用大面积留白（Negative Space）。产品必须像神圣文物一样，放置在抽象的几何展台（如黑曜石方块、纯白圆柱）上，或处于无重力悬浮状态。\n【视听隐喻】：极慢的探针镜头（Probe Lens Dolly In）、克制的边缘光。隐喻必须是静谧且宏大的（如：巨大日食背景、无边际平静水面、极地冰川）。";
+          "\n【材质与色彩交响】：Style A 是顶尖的商业极简美学（如苹果历代广告）。保持大面积留白（Negative Space），但【强烈鼓励】提取产品卖点与材质特征，利用极致饱和的品牌色彩、高级流体、光斑或几何装置来放大视觉张力。产品可置于超现实极简空间中。\n【视听隐喻】：极慢的探针镜头（Probe Lens Dolly In）。隐喻必须紧扣卖点（如：强调色彩绚丽可隐喻彩色粉末爆破；强调冷感可隐喻极地冰川）。";
       }
       if (isStyleB) {
         adaptiveStyleRuleBlock +=
-          "\n【主角与道具法则】：这是真正的微电影！【人】是绝对的主角，产品只是日常生活中的普通【道具】。全片 80% 的画面必须是人物面部情绪、生活动线或生活细节，只有 20% 允许产品自然出镜。\n【严禁截肢型硬广】：【绝对不允许】出现“画面特写产品，旁边硬生生伸出一只手/半个人”的低级画面！产品只能“被遗忘在桌角”、“被漫不经心拿起”、“人物走动时一闪而过的佩戴”。";
+          "\n【微电影法则与恒定锚点】：这是真正的微电影！【人】是绝对的主角，产品只是日常生活中的普通道具。全片 80% 的画面必须是人物面部情绪、生活动线或生活细节，只有 20% 允许产品自然出镜。\n" +
+          "【角色与场景连贯原则】：强烈建议你在首镜设定一个明确的主角人设（如：职场女性、涂鸦滑手）和一个主场景。在整个剧本的生成过程中，请避免主角中途换人；请避免在没有明确转场（如 Match Cut / 叠化）的情况下发生场景瞬移。人物的服装、所处空间的时间线须保持连贯。";
       }
       if (isStyleC) {
         adaptiveStyleRuleBlock +=
-          "\n【核心视觉】：产品是「引爆能量的炸弹」！【必须高频展示产品】，但【绝对禁止】静态摆拍！产品的每次出场必须带有强烈物理动势。\n【基于卖点的视效夸张】：必须根据前端简报构建极端场景（如：防水->深海暗流/滔天巨浪；防摔->陨石/工业撞击；轻薄->龙卷风）。\n【构图与节奏】：强制使用极端的荷兰角、超广角透视变形，画面塞满飞溅碎片或爆裂霓虹光。运镜必须极速推拉（Crash Zoom）、甩镜头（Whip Pan）。";
+          "\n【核心视觉】：产品是「引爆能量的炸弹」！强烈建议高频展示产品，但请避免静态摆拍；产品的每次出场宜带有强烈物理动势。\n【基于卖点的视效夸张】：你的视觉冲击须「师出有名」——从前端传入的简报卖点（USP）出发构建极端场景（如：防水→惊涛骇浪；轻薄→反重力龙卷风；耐用→工业级撞击；续航→极光星轨时间流逝）。请避免脱离卖点无脑堆砌飞溅或爆炸。\n【构图与节奏】：可运用荷兰角、超广角透视变形，画面可塞满飞溅碎片或爆裂霓虹光；运镜宜极速推拉（Crash Zoom）、甩镜头（Whip Pan）。";
       }
-      // 🚨 定位安全锁 (确保不出现品牌调性灾难)
+      // 定位安全锁 (确保不出现品牌调性灾难)
       adaptiveStyleRuleBlock +=
-        "\n🚨【定位安全锁】：无论任何风格，其人物气质、场景质感【必须 100% 绝对服从】传入的产品定位（" +
+        "\n【定位安全锁】：无论任何风格，其人物气质、场景质感须与传入的产品定位（" +
         positioningStr +
-        "），绝不允许产生违和的画面！";
+        "）保持一致，请避免产生违和的画面。";
 
       var priorityWeightDeclaration =
-        "【指令权重申明 · 最高执行判定】以下关于三大风格（Style A/B/C）的【第一镜/开场动作】设定，具有超越任何「平台常规展现逻辑」的最高优先级！无论用户选择什么投放平台，绝对禁止使用「直接展示产品全貌」这种庸俗的开场来覆盖风格自身的艺术设定。\n\n";
-
-      var globalCoreRulesBlock =
-        "🚨【多色/多SKU收尾铁律（Global Mandatory）】：\n" +
-        "请仔细分析前端传入的『产品卖点』和『产品名称』。如果其中暗示了产品有【多种颜色】（如黑白、多色可选）或【多款 SKU】：\n" +
-        "1. 【主线锁色】：在前 95% 的剧情/快剪/悬念镜头中，【绝对禁止】频繁更换产品颜色！必须锁死其中一种作为「主推色」贯穿始终，保证物理逻辑和视觉色彩的绝对连贯。\n" +
-        "2. 【末镜爆发】：【必须且只能】在全片的最后一个镜头（末镜），集中展示所有颜色！请强制使用『极速多色无缝切接 (Match Cut)』或『全色系同框阵列展示』的专业视听手法来进行 SKU 终极收尾！\n\n";
+        "【指令权重说明】以下关于三大风格（Style A/B/C）的【第一镜/开场动作】设定，优先于「平台常规展现逻辑」。请勿使用「直接展示产品全貌」的庸俗开场覆盖各风格自身的艺术设定。\n\n";
 
       var briefForPacing = String(p.brief != null ? p.brief : "无");
+      var multiColorHintRe = /(多色|多款|sku|颜色|色系|黑白|款式可选)/i;
+      var globalCoreRulesBlock = "";
+      if (multiColorHintRe.test(productLabelForStyle + " " + briefForPacing)) {
+        globalCoreRulesBlock =
+          "【多色/SKU 动态展示纪律】：检测到本产品包含多款/多色。前95%镜头请锁死单一主推色，必须且只能在最后一镜以『无缝切接(Match Cut)或阵列展示』集中释出全色系。\n\n";
+      }
+
       var dynamicPacingBlock =
         "【分镜管线 · 时长与节奏匹配法则（与本套 Style 物理隔离绑定）】\n" +
         "当前目标总时长区间为【" +
         targetMin +
         " - " +
         targetMax +
-        "s】。系统为本套 Style 分配【" +
-        minNodes +
-        "–" +
-        maxNodes +
-        " 镜】，你【必须且只能】精准产出 " +
+        "s】。你需要规划大约 " +
         targetNodes +
-        " 个镜头！各镜 `duration` 之和必须落入该总时长区间。\n" +
-        "🛑 你必须死磕前端输入的【产品卖点】，将其作为每一镜推进的绝对核心：\n" +
+        " 个镜头。\n" +
+        "专注描述画面与运镜，不必在此刻进行精确的秒数求和，系统底层会自动校准时长。但须给出符合该风格的单镜相对时长基准。\n" +
+        "请将前端输入的【产品卖点】作为每一镜推进的核心：\n" +
         briefForPacing +
         "\n";
 
@@ -1854,21 +1832,20 @@
       const systemPrompt = `${priorityWeightDeclaration}你是一位轴线逻辑强悍、精通 4A 大厂全套提案心法的顶级 TVC 广告片导演。
 你的唯一任务是：基于用户输入的行业、产品、卖点、平台、画幅与定位，为本套风格定制一套可独立上线的 Client-ready 分镜脚本。你必须先完成「实体类别推断」，再严格执行下方本套 Style 的跨品类自适应规则。
 
-${globalCoreRulesBlock}【导演最高铁律】
-1. 🛑 绝对物理隔离：严格遵守本套 Style 的【镜头节奏死命令】与【绝对物理隔离】，禁止混入另外两套风格的运镜速度、单镜时长或叙事手法。
-2. 🛑 风格差异化铁律：${isStyleA ? "Style A 须保持先锋装置艺术与静谧隐喻空镜，禁止写实生活场景与产品说明书堆砌！" : isStyleC ? "Style C 须高频展示产品并配合极端动效与卖点夸张场景，【绝对禁止】静态摆拍！" : "Style B 须以人物生活流为主（≥80%），产品仅作道具自然出镜，严禁电视购物式硬广与「截肢手」画面！"}
-3. 🛑 拒绝陪衬：本套提案必须 100% 紧扣产品本体与用户具体卖点，视听视角须与另外两套风格（若存在）彻底可区分。
-4. 🛑 纯正语言纪律：除 \`eng_prompt\` 必须是精炼的纯英文生图词（须随实体类别适配：实体侧重材质/光效，虚拟侧重 UI/空间化界面，服务侧重排版/符号隐喻）外，其余字段必须【全部使用纯正专业中文】！绝对禁止中英混杂！
-5. 🛑 第一镜纪律：第一镜【必须且只能】执行本套 Style 的【第一镜 · 正面强制动作】；平台常规逻辑仅从第二镜起叠加；每镜 \`duration\` 必须落在本套 Style 规定的秒数区间内！
-6. 🛑 System 标记滤除：\`visual\` 正文内绝对不准包含 #、素材格 或任何系统内部编号文字，必须是纯粹、高可读性的画面描述。
-7. 🛑 多色/多SKU收尾：严格执行上方「多色/多SKU收尾铁律（Global Mandatory）」——Style A/B/C 无豁免；主线锁色至末镜爆发。
-
+${globalCoreRulesBlock}【架构红线约束 (Redline Constraints)】
+1. 风格物理隔离：遵守本套 Style 的镜头节奏与视听边界，请勿混入另外两套风格的运镜速度、单镜时长或叙事手法。
+2. 风格差异化：${isStyleA ? "Style A 须保持先锋装置艺术与静谧隐喻空镜，必须避免写实生活场景与产品说明书堆砌。" : isStyleC ? "Style C 须高频展示产品并配合极端动效与卖点夸张场景，请勿使用静态摆拍。" : "Style B 须以人物生活流为主（≥80%），产品仅作道具自然出镜，不符合本风格范式的是电视购物式硬广与「截肢手」画面。"}
+3. 卖点聚焦：本套提案须紧扣产品本体与用户具体卖点，视听视角须与另外两套风格（若存在）可区分。
+4. 语言规范：除 \`eng_prompt\` 须为精炼纯英文生图词（须随实体类别适配：实体侧重材质/光效，虚拟侧重 UI/空间化界面，服务侧重排版/符号隐喻）外，其余字段须使用纯正专业中文，请勿中英混杂。
+5. 第一镜纪律：第一镜须执行本套 Style 的【第一镜 · 正面强制动作】；平台常规逻辑仅从第二镜起叠加；每镜 \`duration\` 须落在本套 Style 规定的秒数区间内。
+6. System 标记滤除：\`visual\` 正文内请勿包含 #、素材格 或任何系统内部编号文字，须为纯粹、高可读性的画面描述。
+${globalCoreRulesBlock ? "7. 多色/SKU 收尾：参见上方「多色/SKU 动态展示纪律」。\n" : ""}
 ${adaptiveEntityMappingBlock}
 ${adaptiveStyleRuleBlock}
 ${dynamicCreativeAngle}
 ${dynamicPacingBlock}
 
-严格返回最外层为标准的合法 JSON 结构：{"styleName": "...", "director_treatment": "...", "visualDNA": "...", "shots": [{"source_image_id": 1, "visual": "纯中文画面描述", "eng_prompt": "English prompt for image gen", "motion": "专业矢量运镜", "start_motion": "...", "end_motion": "...", "audio": "物理 ASMR 音效", "lighting": "工业打光 Rig", "pacing": "...", "duration": 3}]}
+严格返回最外层为标准的合法 JSON 结构：{"styleName": "...", "director_treatment": "...", "visualDNA": "...", "shots": [{"source_image_id": 1, "matching_reason": "提取特征匹配理由", "visual": "纯中文画面描述", "eng_prompt": "English prompt for image gen", "motion": "专业矢量运镜", "start_motion": "...", "end_motion": "...", "audio": "物理 ASMR 音效", "lighting": "工业打光 Rig", "pacing": "...", "duration": 3}]}
 ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
 
       var userTextBlock =
@@ -1881,10 +1858,10 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         "【本套风格编号：" + styleCfg.name + "】\n" +
         gridHint;
 
+      // 🚀 性能革命：绝对物理隔离视觉与文本。
+      // 既然此前 analyzeImagesWithVision 已经提取了文本化的 materialCatalog，
+      // 此处的文本分镜推演阶段【严禁】再重复发送庞大的 Base64 原图，彻底解决 Token 爆炸与超时断流问题。
       var userContent = [{ type: "text", text: userTextBlock }];
-      base64Images.forEach(function (b64) {
-        userContent.push({ type: "image_url", image_url: { url: b64, detail: "high" } });
-      });
 
       var lastError = null;
       var styleObj = { shots: [] };
@@ -1893,9 +1870,9 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
 
       // ====== 🚀 分批流水线生成 (Batching) 开始 ======
       var currentShots = [];
-      var batchSize = 12; // 绝对安全区：每次最多逼 AI 吐 12 镜，防断流
+      var batchSize = 6; // 安全区：单批 6 镜，降低 JSON 截断与指令遗忘风险
       var batchCount = 0;
-      var maxBatches = isStyleC ? 8 : Math.ceil(targetNodes / batchSize) + 1; // Style C：最多 8 批接力，网络闪断时继续补齐
+      var maxBatches = isStyleC ? 12 : Math.ceil(targetNodes / batchSize) + 2;
       var lastShotContext = null;
 
       function styleBatchProgressPct(doneShots) {
@@ -1960,53 +1937,49 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
           batchCount === 2 || batchCount === 3 ? { preserveLabel: true, monotonic: true } : { monotonic: true }
         );
 
-        // --- 1. 强制生成序列，但赋予素材“脑补”特权 ---
+        // --- 1. 智能语义分配：废除强制顺子，完全交由模型结合剧情进行语义分配 ---
         var batchBlueprintStr = "";
         if (catalogSlotCount > 1) {
-          var blueprintIds = [];
-          var recentIds = [];
-          if (currentShots.length > 0) recentIds.push(parseInt(currentShots[currentShots.length - 1].source_image_id, 10));
-          if (currentShots.length > 1) recentIds.push(parseInt(currentShots[currentShots.length - 2].source_image_id, 10));
-
-          for (var bi = 0; bi < shotsToRequest; bi++) {
-            var pool = [];
-            for (var c = 1; c <= catalogSlotCount; c++) {
-              if (recentIds.indexOf(c) === -1) pool.push(c);
-            }
-            if (pool.length === 0) pool = [1];
-            var pick = pool[Math.floor(Math.random() * pool.length)];
-            blueprintIds.push(pick);
-            recentIds.unshift(pick);
-            if (recentIds.length > 2) recentIds.pop();
-          }
-
           batchBlueprintStr =
-            "【系统底层锁定】：本批次的 `source_image_id` 序列已锁定为：" +
-            blueprintIds.join(" -> ") +
-            "。\n" +
-            "⚠️【核弹级豁免权】：如果当前风格要求你写隐喻空镜、自然奇观、生理反应碎片、生活场景或抽象奇观（Style A/C 的 B-roll 与 Style B/C 的开场），请你【完全无视】该素材图里真正画了什么！尽情虚构你要的电影画面，把这个 ID 纯粹当成后台占位符！绝不要被素材绑架！";
+            "【智能语义调度】：请根据当前剧情推进所需要的景别（如全景/中景/特写/操作演示），从上方的【素材目录】中自主挑选最匹配物理语义的 `source_image_id`。\n" +
+            "🛑【防死板铁律】：相邻的两个镜头，尽量避免连续使用同一个 ID（除非是基于同视角的顺畅运镜）；\n" +
+            "⚠️【核弹级豁免权】：如果当前镜头是你为 Style A/B/C 虚构的隐喻空镜、自然奇观、人物纯情绪特写（即画面中【根本不出现产品】的镜头），请你【必须将 source_image_id 填为 null】！绝对不要把产品图硬绑到无关的空镜上！";
         } else {
-          batchBlueprintStr = "【单素材变奏】：仅1张图。请运用极度微距、光影切换或人物遮挡等手段制造画面差异。";
+          batchBlueprintStr =
+            "【单素材变奏】：仅1张图。请运用极度微距、光影切换或人物遮挡等手段制造画面差异。\n" +
+            "⚠️【核弹级豁免权】：若当前镜头为纯隐喻空镜或纯人物情绪（无产品露出的 B-roll），请【必须将 source_image_id 填为 null】！";
         }
         if (isStyleC) {
           batchBlueprintStr +=
-            "\n🚨【Style C 视觉风暴死命令】：基于 brief 卖点构建好莱坞级极端测试场景！本批次必须在『 [带动势的产品出场] ⇄ [极端环境异象/生理反应] ⇄ [Dutch Angle 全景/POV 切换] 』之间疯狂横跳！【绝对禁止】静态产品摆拍！【绝对禁止】连续两镜同景别同运镜——上一镜局部特写，本镜必须 Crash Zoom 拉开或切 POV/夸张全景！";
+            "\n🚨【Style C 视觉风暴死命令】：基于 brief 卖点构建好莱坞级极端测试场景！本批次必须在『 [带动势的产品出场] ⇄ [极端环境异象/生理反应] ⇄ [Dutch Angle 全景/POV 切换] 』之间疯狂横跳！\n" +
+            "💨【呼吸口节奏】：为了防止长视频视觉疲劳，每经过 3-4 次极端视觉冲击后，允许插入 1 镜（0.5s-1s）的极简黑底白字排版或环境死寂空镜作为节奏缓冲，然后再掀起新一轮风暴！【绝对禁止】连续两镜同景别同运镜！";
         }
+        if (isStyleB) {
+          batchBlueprintStr +=
+            "\n【生活流卖点暗喻】：本批次请将卖点转化为【人物的状态或感受】。如果卖点是降噪，画面可以是“主角在喧闹街头闭眼享受宁静”。严禁让产品特写生硬抢戏，必须保持微电影质感！";
+        } else {
+          batchBlueprintStr +=
+            "\n【卖点画面化铁律】：无论是极简(Style A)还是夸张(Style C)，本批次的画面必须直指产品的一个核心卖点！禁止写“完美展现了功能”，必须写出具体的视觉表现（如：水珠在涂层上弹开）。";
+        }
+        batchBlueprintStr +=
+          "\n【动作轴线与转场纪律】：请时刻检查上一镜的结束动作（end_motion）与本镜的起始动作（start_motion）。如果上一镜人物‘向画面右侧走入暗处’，本镜必须从逻辑上承接（如‘从画面左侧阴影中走出’）。如果不连贯，必须在 visual 中写明【转场过渡】（如跳切、蒙太奇、时间流逝）来合理化空间跳跃！";
 
         // --- 2. 动态构建大厂商业片三幕剧锚点（确保全部紧扣产品本体，从结构上彻底拉开雷同度） ---
         var narrativePhase = "";
         if (isStyleB) {
           if (batchCount === 1)
-            narrativePhase = "【第一幕：起】纯生活场景建立，主角在做自己的事，完全不要提产品。";
+            narrativePhase =
+              "【第一幕：起（即本套风格的第一镜·正面强制动作）】纯生活场景建立，交代清楚主角身份、所处环境与当前情绪，确立全片的视觉基调。让主角在做自己的事，完全不要提产品。";
           else if (batchCount === 2)
             narrativePhase =
-              "【第二幕：承】主角的剧情遇到转折，产品作为道具极其自然地介入动作（如随手拿起），严禁描写产品特写或材质。";
+              "【第二幕：承（道具自然介入）】主角的动线或剧情遇到转折。产品作为【道具】极其自然地介入主角的动作（如随手拿起、余光瞥见）。必须顺延第一幕的场景和人物，严禁生硬切入产品特写！";
           else
             narrativePhase =
-              "【第三幕：合】情绪收尾，展现人物达到自信/放松状态，产品随人物自然存在于画面中。";
+              "【第三幕：合（情绪升华）】情绪收尾。展示人物达到自信、放松或释然的状态，产品随人物自然存在于画面中。必须给出一个漂亮的电影级情绪落幅。";
         } else if (isStyleA) {
           if (batchCount === 1)
-            narrativePhase = "【第一幕：迷局暗示】仅限隐喻空镜与产品极小局部的微距，整体保持极简深邃。";
+            narrativePhase =
+              "【第一幕：迷局暗示（即本套风格的第一镜·正面强制动作）】仅限隐喻空镜与产品极小局部的微距，整体保持极简深邃。";
           else if (batchCount === 2)
             narrativePhase = "【第二幕：解构质感】光影流动，展示材质极致工艺，隐喻元素与产品产生视觉共鸣。";
           else
@@ -2020,13 +1993,13 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
             narrativePhase +
             "\n\n" +
             batchBlueprintStr +
-            "\n\n🚨【强制定量指令】：这是第 1 批。你【必须且只能】精确输出 " +
+            "\n\n【分批定量指令】：这是第 1 批。请精确输出 " +
             shotsToRequest +
-            " 个镜头！请将这 " +
+            " 个镜头，并将这 " +
             shotsToRequest +
-            " 镜合理分配在开场和铺垫中。少于 " +
+            " 镜合理分配在开场和铺垫中。请确保本批次输出充实的 " +
             shotsToRequest +
-            " 镜将被判定为生产事故！仅输出合法 JSON。";
+            " 镜剧情。仅输出合法 JSON。";
         } else if (batchCount > 1 && lastShotContext) {
           batchBlueprintStr +=
             "\n🛑【动态防连拍死锁】：\n上一镜的画面是：「" +
@@ -2038,15 +2011,20 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
               "如果上一镜是微距产品局部，本镜必须切向一个高质感的【隐喻空镜】；如果上一镜是隐喻，本镜请回到产品。绝对禁止复用前文已经出现过的隐喻元素！";
           } else if (isStyleB) {
             batchBlueprintStr +=
-              "如果上一镜已经出现了产品，接下来的连续 3 个镜头【绝对禁止】再提产品！必须去写主角接下来的具体生活动作（比如他走向窗边、他看向后视镜）。把你的注意力集中在【人】身上！";
+              "如果上一镜出现了产品，且目标总时长 > 30s，接下来 2-3 镜请专注于人物生活流；如果是短视频(≤30s)，允许隔 1 镜后产品再次自然入镜，但必须变换互动方式。请把注意力集中在【人】的具体生活动作（如走向窗边、看向后视镜）上。";
           } else if (isStyleC) {
             batchBlueprintStr +=
-              "本镜允许继续描写产品，但【绝对禁止】使用相同的景别和运镜！如果上一镜是产品的极速特写，这镜必须拉开切夸张全景或第一人称视角（POV）！并时刻伴随人物瞳孔收缩、流汗等极端生理反应！";
+              "请根据具体产品特性制造视觉奇观。如果上一镜是极速特写，本镜请拉开切宽画幅全景或 POV；无需刻板强加流汗等生理反应，重点在于运镜张力与物理动态的极致反差！";
           }
           var deficit = targetNodes - currentShots.length;
-          var pastVisuals = currentShots
+
+          // 【滑动窗口优化】：只截取最近 5 镜作为防雷同依据，防止批次过多导致 Token 爆炸及模型注意力分散
+          var WINDOW_SIZE = 5;
+          var recentShots = currentShots.slice(-WINDOW_SIZE);
+          var pastVisuals = recentShots
             .map(function (s, idx) {
-              return "Shot " + (idx + 1) + ": " + s.visual;
+              var actualIdx = currentShots.length - recentShots.length + idx + 1;
+              return "Shot " + actualIdx + ": " + s.visual;
             })
             .join(" | ");
 
@@ -2063,9 +2041,12 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
             "上一镜落幅是：「" +
             lastShotContext.visual +
             "」。\n" +
-            "🛑【防雷同死命令】：前文已生成：[" +
+            "🛑【防雷同原则】：前文已生成：[" +
             pastVisuals +
-            "]。接下来的镜头【绝对禁止】复用上述场景或动作结构！必须向下推进剧情！";
+            "]。接下来的镜头请避免复用上述场景或动作结构，须向下推进剧情！\n" +
+            "🚨【JSON 格式指令】：这是第 " +
+            batchCount +
+            " 批，请仅返回 {\"shots\": [...]} 结构，绝对不要返回 styleName、director_treatment、visualDNA 等其他顶层字段！";
         }
 
         var batchSuccess = false;
@@ -2076,7 +2057,8 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
               { role: "user", content: userContent },
             ];
 
-            var dynamicTemp = styleCfg.id === "C" ? 0.85 : 0.7;
+            // 【温度精细化控制】：Style A 需严密逻辑与对齐降至 0.6，Style C 需放飞想象力设为 0.85，Style B 保持 0.7
+            var dynamicTemp = styleCfg.id === "C" ? 0.85 : styleCfg.id === "A" ? 0.6 : 0.7;
             if (attempt > 1) dynamicTemp += 0.1;
 
             const res = await llmApiFetch("chat/completions", {
@@ -3012,12 +2994,12 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
   function getStyleMoodSuffix(style, sIdx) {
     var name = String((style && style.styleName) || "");
     if (/style\s*a\b/i.test(name) || (sIdx === 0 && !/style\s*[bc]\b/i.test(name))) {
-      return "extreme micro-details, sharp technical focus, pristine texture or UI clarity, cinematic clinical lighting, minimalist premium presentation, commercial standard.";
+      return "Extreme micro-details, sharp technical focus, striking brand-aligned color accents against clean negative space, premium material showcase, cinematic clinical lighting combined with elegant geometric minimalism, commercial standard.";
     }
     if (/style\s*b\b/i.test(name) || sIdx === 1) {
       return "High-end lifestyle photography, warm afternoon ambient light, soft natural shadows, beautiful depth of field, blurred background, cinematic elegant bokeh, organic and authentic feel.";
     }
-    return "Surreal avant-garde cinematography, high contrast dramatic chiaroscuro lighting, deep liquid dark background, explosive abstract textures, aggressive composition, intentional motion blur, extreme visual impact, award-winning commercial tvc style.";
+    return "Hyper-exaggerated commercial product test, USP-driven dramatic environment, high contrast cinematic lighting, dynamic motion blur, extreme visual impact, award-winning breathtaking action shot.";
   }
 
   /** 全行业顶级商业摄影 — 材质 → 物理/光影约束（供 DALL·E 工业级出图） */
@@ -3093,9 +3075,17 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
   /** 生图专用：在 strip 基础上追加高速摄影定格语义（DALL·E / MJ / Nano Banner 等底层 Prompt） */
   function sanitizeVisualForImageGen(originalVisualText, style, sIdx) {
     var cleanPrompt = stripVideoEditTermsForDraw(originalVisualText);
-    if (isStyleCForDraw(style, sIdx) || /炸裂|飞溅|狂暴|极速/.test(cleanPrompt)) {
-      cleanPrompt +=
-        "，高速摄影瞬间定格 (High-speed photography frozen motion), 画面极其清晰锐利, 无运动模糊";
+    // 检测是否为纯英文/英文字符主导（适配 eng_prompt）
+    var isEnglish = /^[A-Za-z0-9\s\p{P}]+$/u.test(cleanPrompt.trim());
+
+    if (isStyleCForDraw(style, sIdx)) {
+      cleanPrompt += isEnglish
+        ? ", dynamic and dramatic commercial product environment, exaggerated USP-driven scene, extreme perspective and action, high-energy visual impact"
+        : "，极具视觉张力的卖点夸张场景 (Exaggerated USP-driven scene), 极限物理动态与透视 (Extreme dynamic motion and perspective), 强烈的画面动势感 (High-energy visual impact)";
+    } else if (/炸裂|飞溅|狂暴|极速/i.test(cleanPrompt) || (isEnglish && /splash|burst|explosion|fast/i.test(cleanPrompt))) {
+      cleanPrompt += isEnglish
+        ? ", high-speed photography, crisp frozen motion capture, razor sharp details, zero motion blur"
+        : "，高速摄影瞬间定格 (High-speed photography frozen motion), 画面极其清晰锐利, 无运动模糊";
     }
     return cleanPrompt.trim();
   }
@@ -3118,13 +3108,14 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
       shot.lighting != null && String(shot.lighting).trim() ? String(shot.lighting).trim() : "";
 
     if (mode === "dalle") {
+      var dnaLine = style && style.visualDNA ? String(style.visualDNA).trim() : productName;
       var categoryEl = document.getElementById("category-input");
       var category = categoryEl ? String(categoryEl.value || "").trim() : "";
       var materialLine = resolveMaterialConstraintLine(productName, category);
       var dalleParts = [
         "Hyper-realistic commercial product photography, 8K, shot on ARRI Alexa 65, Zeiss Master Prime optics",
         sceneCore,
-        "Product details: " + exactProductDescription,
+        "Product details and traits: " + dnaLine,
         lighting ? "Lighting rig: " + lighting : "",
         motionHint && !isStyleCForDraw(style, sIdx) ? "Camera motion: " + motionHint : "",
         materialLine,
