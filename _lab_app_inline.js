@@ -25,6 +25,7 @@
 
   // 2. 定义全局中断控制器：用于取消未完成的生成任务
   let currentStoryboardController = null;
+  const safeSetLabBusy = window.setLabBusy || function () {};
 
   const btnCraftStoryboard = document.getElementById("btnCraftStoryboard");
   if (!btnCraftStoryboard) return;
@@ -642,7 +643,7 @@
         usage_scenarios: collectUsageScenarios(),
       };
 
-      setLabBusy(true);
+      safeSetLabBusy(true);
       const getter = window.__getStoryboardImageFiles;
       const files = typeof getter === "function" ? getter() : [];
       if (files.length > 0) {
@@ -673,7 +674,7 @@
       initDashboardSkeleton();
       resetStoryEngineProgressState();
       window.__STORY_ENGINE_GENERATING__ = true;
-      setLabBusy(false);
+      safeSetLabBusy(false);
 
       await generateThreeStyleStoryboards(params, apiKey, function (idx, styleObj) {
         renderSingleStylePanel(idx, styleObj);
@@ -695,7 +696,7 @@
       clearStoryEngineProgress(true);
     } finally {
       currentStoryboardController = null;
-      setLabBusy(false);
+      safeSetLabBusy(false);
       btnCraftStoryboard.disabled = false;
       btnCraftStoryboard.textContent = originalBtnText;
     }
@@ -1326,7 +1327,6 @@
         if (styleC) assertStyleCShotDurationLimit(shots, "校准后");
       }
 
-      stripWeights();
       enforceIntegerDuration();
       stripWeights();
       if (styleC) assertStyleCShotDurationLimit(shots, "整数校准后");
@@ -2758,13 +2758,6 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
     var modsTarget = document.getElementById("storyModsTarget");
     if (!dashboard || !panels) return;
 
-    if (!document.getElementById("lab-visual-dalle-pulse")) {
-      var skPulse = document.createElement("style");
-      skPulse.id = "lab-visual-dalle-pulse";
-      skPulse.textContent = "@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.45}}";
-      document.head.appendChild(skPulse);
-    }
-
     window.__LAST_STORYBOARD_DATA__ = [null, null, null];
 
     if (modsTarget) {
@@ -3047,7 +3040,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
       const originalStyle = currentStyles[idx];
       if (!originalStyle) return alert("选中的脚本数据不存在");
 
-      if (typeof window.setLabBusy === "function") window.setLabBusy(true);
+      safeSetLabBusy(true);
       setStoryEngineProgress("正在按导演意见精修选中脚本...", 30);
 
       try {
@@ -3069,7 +3062,7 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
         alert(formatLlmFetchAlertMessage(err, "精修失败"));
         clearStoryEngineProgress();
       } finally {
-        if (typeof window.setLabBusy === "function") window.setLabBusy(false);
+        safeSetLabBusy(false);
       }
     });
   }
@@ -3441,13 +3434,6 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
           ? window.getLlmApiKeyFromInput()
           : String(document.getElementById("llm-api-key").value || "").trim();
 
-      if (!document.getElementById("lab-visual-dalle-pulse")) {
-        var skPulse = document.createElement("style");
-        skPulse.id = "lab-visual-dalle-pulse";
-        skPulse.textContent = "@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.45}}";
-        document.head.appendChild(skPulse);
-      }
-
       var data = window.__LAST_STORYBOARD_DATA__;
       if (!data || !data.length) return alert("请先点击 Craft Storyboard 生成分镜脚本");
 
@@ -3730,9 +3716,6 @@ ${buildUniversalBindingPromptBlock(catalogSlotCount)}`;
 
   function buildMidjourneyImagineLine(shot, style, productName, sIdx, mjSuffix) {
     var drawPrompt = buildVisualDrawPrompt(shot, style, productName, sIdx, "mj");
-    if (shotUsesDynamicVideoAsset(shot)) {
-      drawPrompt = sanitizeMjPromptForVideoAsset(drawPrompt);
-    }
     return "/imagine prompt: " + drawPrompt + mjSuffix;
   }
 
